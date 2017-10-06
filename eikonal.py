@@ -18,7 +18,7 @@ def main():
 #####
     live = []
     heapq.heapify(live)
-    start = [(10, 0, 15)]
+    start = [(9, 9, 7)]
     for s in start:
         u[s] = 0
         u.mask[s] = True
@@ -27,10 +27,15 @@ def main():
     while len(live) > 0:
         u, live = update(u, v, live)
     u = np.ma.getdata(u)
-    #plot_uv(u, v)
-    rays = [trace_ray_runge_kutta(u, start[0], (19, 9, 19))]
-    rays += [trace_ray_euler(u, start[0], (19, 9, 19))]
-    ##print(rays)
+    plot_uv(u, v)
+    rays = [trace_ray_runge_kutta(u, start[0], (0, 0, 19))]
+    rays += [trace_ray_runge_kutta(u, start[0], (0, 9, 19))]
+    rays += [trace_ray_runge_kutta(u, start[0], (9, 9, 19))]
+    rays += [trace_ray_runge_kutta(u, start[0], (9, 0, 19))]
+    rays += [trace_ray_runge_kutta(u, start[0], (19, 0, 19))]
+    rays += [trace_ray_runge_kutta(u, start[0], (0, 19, 19))]
+    rays += [trace_ray_runge_kutta(u, start[0], (19, 19, 19))]
+    rays += [trace_ray_runge_kutta(u, start[0], (14, 14, 19))]
     plot_rays(u, rays)
 
 def update(u, v, live):
@@ -163,13 +168,13 @@ def trace_ray_runge_kutta(u, start, finish):
                                   + h/3 * g1\
                                   + h/3 * g2\
                                   + h/6 * g3)))
-        print(np.sqrt(np.sum(np.square(ray[-2]-start)))-
-                np.sqrt(np.sum(np.square(ray[-1]-start))),
-                np.sqrt(np.sum(np.square(ray[-1]-start))))
+        #print(np.sqrt(np.sum(np.square(ray[-2]-start)))-
+        #        np.sqrt(np.sum(np.square(ray[-1]-start))),
+        #        np.sqrt(np.sum(np.square(ray[-1]-start))))
         if np.sqrt(np.sum(np.square(ray[-1]-start))) > \
                 np.sqrt(np.sum(np.square(ray[-2]-start))):
             break
-        print(ray[-1])
+        #print(ray[-1])
     return(ray)
 
 def trace_ray_euler(u, start, finish):
@@ -192,7 +197,7 @@ def trace_ray_euler(u, start, finish):
         gradi = G0 + [xi % 1 * dGdx, yi % 1 * dGdy, zi % 1 * dGdz]
         dx, dy, dz = gradi / np.linalg.norm(gradi) \
                    * min(h, 1/np.linalg.norm(gradi))
-        print(1/np.linalg.norm(gradi))
+        #print(1/np.linalg.norm(gradi))
         xi += dx
         yi += dy
         zi += dz
@@ -215,11 +220,11 @@ def plot_rays(u, rays):
     ax = fig.add_subplot(1, 1, 1, projection="3d")
     for ray in rays:
         ax.plot(ray[:,0], ray[:,1], ray[:,2])
-    #cb = ax.scatter(X, Y, Z,
-    #                c=u,
-    #                cmap=plt.get_cmap("jet_r"),
-    #                alpha=0.2)
-    #fig.colorbar(cb)
+    cb = ax.scatter(X, Y, Z,
+                    c=u,
+                    cmap=plt.get_cmap("jet_r"),
+                    alpha=0.2)
+    fig.colorbar(cb)
     plt.show()
 
 def plot_uv(u, v):
