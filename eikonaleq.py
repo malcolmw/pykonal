@@ -1,99 +1,53 @@
 import heapq
 import numpy as np
-import scipy.interpolate
 import seispy
+import time
 
 pi = np.pi
 
-Nx, Ny, Nz = 20, 20, 20
-VELOCITY_MODEL = "/Users/malcolcw/Projects/Shared/Velocity/FANG2016/original/"\
-                 "VpVs.dat"
+VELOCITY_MODEL = "data/VpVs.dat"
+SOURCE = (33.0, -116.0, 12.0)
 
 def main():
     vgrid = prep_vmod()
     u = np.ones(vgrid["velocity"].shape) * float('inf')
     u = np.ma.masked_array(u, mask=False)
+    #plot_v(vgrid["velocity"], vgrid)
 #####
     live = []
     heapq.heapify(live)
-    start = [(16, 31, 15)]
-    for s in start:
-        u[s] = 0
-        u.mask[s] = True
-        heapq.heappush(live, (0, s))
+    source = seispy.coords.as_geographic(SOURCE)
+    sc = source.to_cartesian().dot(vgrid["R"])
+    sc[2] = seispy.constants.EARTH_RADIUS - sc[2]
+    dx, dy, dz = vgrid["dx"], vgrid["dy"], vgrid["dz"]
+    ix = sc[0] / vgrid["dx"]
+    iy = sc[1] / vgrid["dy"]
+    iz = (vgrid["zmax"] - sc[2]) / vgrid["dz"]
+    ix0, ix1 = int(ix), int(ix) + 1
+    iy0, iy1 = int(iy), int(iy) + 1
+    iz0, iz1 = int(iz), int(iz) + 1
+    for node in ((ix0, iy0, iz0),
+                 (ix0, iy0, iz1),
+                 (ix0, iy1, iz0),
+                 (ix0, iy1, iz1),
+                 (ix1, iy0, iz0),
+                 (ix1, iy0, iz1),
+                 (ix1, iy1, iz0),
+                 (ix1, iy1, iz1)):
+        u[node] = np.sqrt(
+                    np.sum(
+                        np.square((np.asarray(node) - [ix, iy, iz]) * [dx, dy, dz])))\
+                / vgrid["velocity"][node]
+        u.mask[node] = True
+        heapq.heappush(live, (u[node], node))
 #####
+    t = time.time()
     while len(live) > 0:
         u, live = update(u, vgrid, live)
+    print("Update took %.3f s" % (time.time() - t))
     u = np.ma.getdata(u)
-    plot_uv(u, vgrid)
-    #rays = [trace_ray_runge_kutta(u, vgrid, start[0], (12, 9, 12))]
-    #plot_rays(u, rays)
-
-def prep_vmod():
-    vm = seispy.velocity.VelocityModel(VELOCITY_MODEL,
-                                       fmt="FANG")
-    grid = vm.v_type_grids[1][1]["grid"]
-    sc = seispy.coords.SphericalCoordinates(8)
-    theta_max = grid.theta0 + (grid.ntheta - 1) * grid.dtheta
-    phi_max = grid.phi0 + (grid.nphi - 1) * grid.dphi
-    rho_max = grid.rho0 + (grid.nrho - 1) * grid.drho
-    sc[...] = [(grid.rho0, theta_max, grid.phi0),
-               (grid.rho0, theta_max, phi_max),
-               (grid.rho0, grid.theta0, grid.phi0),
-               (grid.rho0, grid.theta0, phi_max),
-               (rho_max, theta_max, grid.phi0),
-               (rho_max, theta_max, phi_max),
-               (rho_max, grid.theta0, grid.phi0),
-               (rho_max, grid.theta0, phi_max)]
-    cc0 = sc.to_cartesian()
-
-    cc0 = cc0.rotate(grid.phi0, 0, 0)
-    cc0 = cc0.rotate(0, theta_max, 0)
-    cc0 = cc0.rotate(pi/2, 0, 0)
-
-    nx, ny, nz = grid.nphi, grid.ntheta, grid.nrho
-
-    cc = seispy.coords.as_cartesian(
-            [(x, y, z) for x in np.linspace(min(cc0[:,0]), max(cc0[:,0]), nx)
-                       for y in np.linspace(min(cc0[:,1]), max(cc0[:,1]), ny)
-                       for z in np.linspace(min(cc0[:,2]), max(cc0[:,2]), nz)])
-    cc = cc.rotate(-pi/2, 0, 0)
-    cc = cc.rotate(0, -theta_max, 0)
-    cc = cc.rotate(-grid.phi0, 0, 0)
-
-    v = np.array([vm(1, 1, lat, lon, depth)
-                    for (lat, lon, depth) in cc.to_geographic()])
-
-    cc = cc.rotate(grid.phi0, 0, 0)
-    cc = cc.rotate(0, theta_max, 0)
-    cc = cc.rotate(pi/2, 0, 0)
-
-    cc = np.reshape(cc, (nx, ny, nz, 3))
-    v = np.reshape(v, (nx, ny, nz))
-
-    vgrid = {"velocity": v,
-             "coords": cc,
-             "dx": (np.max(cc[...,0]) - np.min(cc[...,0])) / (nx - 1),
-             "dy": (np.max(cc[...,1]) - np.min(cc[...,1])) / (ny - 1),
-             "dz": (np.max(cc[...,2]) - np.min(cc[...,2])) / (nz - 1)}
-
-
-#####
-#    import matplotlib.pyplot as plt
-#    from mpl_toolkits.mplot3d import Axes3D
-#    fig = plt.figure()
-#    ax = fig.add_subplot(1, 1, 1, projection="3d")
-#    ax.scatter(cc[..., 0], cc[...,1], cc[...,2],
-#               s=1,
-#               c=v,
-#               cmap=plt.get_cmap("jet_r"))
-#    ax.set_xlabel("E")
-#    ax.set_ylabel("N")
-#    ax.set_zlabel("R")
-#    ax.set_zlim((6271, 6521))
-#    plt.show()
-######
-    return(vgrid)
+    rays = [trace_ray_runge_kutta(u, vgrid, source, (33.5, -116.5, 0.0))]
+    plot_rays(u, vgrid, rays)
 
 def update(u, vgrid, live):
     v = vgrid["velocity"]
@@ -117,42 +71,20 @@ def update(u, vgrid, live):
                  u0[i, min(j+1, u0.shape[1]-1), k])
         uz = min(u0[i, j, max(k-1, 0)],
                  u0[i, j, min(k+1, u0.shape[2]-1)])
-        A = 1/dx**2 + 1/dy**2 + 1/dz**2
-        B = -2*(ux/dx**2 + uy/dy**2 + uz/dz**2)
-        C = (ux/dx)**2 + (uy/dy)**2 + (uz/dz)**2 - 1/v[i, j, k]**2
-        D = B**2 - 4 * A * C
-        if D >= 0:
-            u[i, j, k] = (-B + np.sqrt(D)) / (2 * A)
-        else:
-            A1 = 1/dx**2 + 1/dy**2
-            B1 = -2*(ux/dx**2 + uy/dy**2)
-            C1 = (ux/dx)**2 + (uy/dy)**2 - 1/v[i, j, k]**2
-            D1 = B1**2 - 4 * A1 * C1
+        ux, ddx2 = (ux, 1/dx**2) if ux < u[i, j, k] else (0, 0)
+        uy, ddy2 = (uy, 1/dy**2) if uy < u[i, j, k] else (0, 0)
+        uz, ddz2 = (uz, 1/dz**2) if uz < u[i, j, k] else (0, 0)
 
-            A2 = 1/dx**2 + 1/dz**2
-            B2 = -2*(ux/dx**2 + uz/dz**2)
-            C2 = (ux/dx)**2 + (uz/dz)**2 - 1/v[i, j, k]**2
-            D2 = B2**2 - 4 * A2 * C2
+        A = ddx2 + ddy2 + ddz2
+        B = -2 * (ux*ddx2 + uy*ddy2 + uz*ddz2)
+        C = (ux**2)*ddx2 + (uy**2)*ddy2 + (uz**2)*ddz2 - 1/v[i, j, k]**2
 
-            A3 = 1/dy**2 + 1/dz**2
-            B3 = -2*(uy/dy**2 + uz/dz**2)
-            C3 = (uy/dy)**2 + (uz/dz)**2 - 1/v[i, j, k]**2
-            D3 = B3**2 - 4 * A3 * C3
-
-            u1 = (-B1 + np.sqrt(D1)) / (2 * A1)  if D1 >= 0\
-                    else ux + dx / v[i, j, k] if ux < uy\
-                    else uy + dy / v[i, j, k]
-
-            u2 = (-B2 + np.sqrt(D2)) / (2 * A2)  if D2 >= 0\
-                    else ux + dx / v[i, j, k] if ux < uz\
-                    else uz + dz / v[i, j, k]
-
-            u3 = (-B3 + np.sqrt(D3)) / (2 * A3)  if D3 >= 0\
-                    else uy + dy / v[i, j, k] if uy < uz\
-                    else uz + dz / v[i, j, k]
-
-            u[i, j, k] = min(u1, u2, u3)
-
+        #if np.isnan((-B + np.sqrt(B**2 - 4*A*C)) / (2*A)):
+        #if B**2 < 4*A*C:
+        #    print("A, B, C = %g, %g, %g" % (A, B, C), ddx2, ddy2, ddz2)
+        #    print(ux, uy, uz, u[i, j, k])
+        #    print(active, (i, j, k))
+        u[i, j, k] = (-B + max(0, np.sqrt(B**2 - 4*A*C))) / (2*A)
     u.mask[active] = True
     indices = [l[1] for l in live]
     for ijk in near:
@@ -164,71 +96,135 @@ def update(u, vgrid, live):
     live.sort()
     return(u, live)
 
-def interp_grad(grad, p):
-    ix0 = min(max(int(p[0]), 0), Nx-1)
-    ix1 = min(max(ix0+1, 0), Nx-1)
-    dx = p[0]-ix0
-    iy0 = min(max(int(p[1]), 0), Ny-1)
-    iy1 = min(max(iy0+1, 0), Ny-1)
-    dy = p[1]-iy0
-    iz0 = min(max(int(p[2]), 0), Nz-1)
-    iz1 = min(max(iz0+1, 0), Nz-1)
-    dz = p[2]-iz0
+def prep_vmod():
+    vm = seispy.velocity.VelocityModel(VELOCITY_MODEL,
+                                       fmt="FANG")
+    grid = vm.v_type_grids[1][1]["grid"]
+    sc = seispy.coords.SphericalCoordinates(8)
+    theta_max = grid.theta0 + (grid.ntheta - 1) * grid.dtheta
+    phi_max = grid.phi0 + (grid.nphi - 1) * grid.dphi
+    rho_max = grid.rho0 + (grid.nrho - 1) * grid.drho
+    sc[...] = [(grid.rho0, theta_max, grid.phi0),
+               (grid.rho0, theta_max, phi_max),
+               (grid.rho0, grid.theta0, grid.phi0),
+               (grid.rho0, grid.theta0, phi_max),
+               (rho_max, theta_max, grid.phi0),
+               (rho_max, theta_max, phi_max),
+               (rho_max, grid.theta0, grid.phi0),
+               (rho_max, grid.theta0, phi_max)]
 
-    Gx000 = grad[ix0, iy0, iz0, 0]
-    Gx001 = grad[ix0, iy0, iz1, 0]
-    Gx010 = grad[ix0, iy1, iz0, 0]
-    Gx011 = grad[ix0, iy1, iz1, 0]
-    Gx100 = grad[ix1, iy0, iz0, 0]
-    Gx101 = grad[ix1, iy0, iz1, 0]
-    Gx110 = grad[ix1, iy1, iz0, 0]
-    Gx111 = grad[ix1, iy1, iz1, 0]
-    Gx00 = Gx000 + (Gx100-Gx000) * dx
-    Gx01 = Gx001 + (Gx101-Gx001) * dx
-    Gx10 = Gx010 + (Gx110-Gx010) * dx
-    Gx11 = Gx011 + (Gx111-Gx011) * dx
-    Gx0 = Gx00 + (Gx10 - Gx00) * dy
-    Gx1 = Gx01 + (Gx11 - Gx01) * dy
-    Gx = Gx0 + (Gx1 - Gx0) * dz
+    cc0 = sc.to_cartesian()
+    R = seispy.coords.rotation_matrix(grid.phi0, theta_max, pi/2)
+    Rinv = np.linalg.inv(R)
+    cc0 = cc0.dot(R)
 
-    Gy000 = grad[ix0, iy0, iz0, 1]
-    Gy001 = grad[ix0, iy0, iz1, 1]
-    Gy010 = grad[ix0, iy1, iz0, 1]
-    Gy011 = grad[ix0, iy1, iz1, 1]
-    Gy100 = grad[ix1, iy0, iz0, 1]
-    Gy101 = grad[ix1, iy0, iz1, 1]
-    Gy110 = grad[ix1, iy1, iz0, 1]
-    Gy111 = grad[ix1, iy1, iz1, 1]
-    Gy00 = Gy000 + (Gy100-Gy000) * dx
-    Gy01 = Gy001 + (Gy101-Gy001) * dx
-    Gy10 = Gy010 + (Gy110-Gy010) * dx
-    Gy11 = Gy011 + (Gy111-Gy011) * dx
-    Gy0 = Gy00 + (Gy10 - Gy00) * dy
-    Gy1 = Gy01 + (Gy11 - Gy01) * dy
-    Gy = Gy0 + (Gy1 - Gy0) * dz
+    nx, ny, nz = grid.nphi, grid.ntheta, grid.nrho
+    cc = seispy.coords.as_cartesian(
+            [(x, y, z) for x in np.linspace(min(cc0[:,0]), max(cc0[:,0]), nx)
+                       for y in np.linspace(min(cc0[:,1]), max(cc0[:,1]), ny)
+                       for z in np.linspace(min(cc0[:,2]), max(cc0[:,2]), nz)])
+    cc = cc.dot(Rinv)
 
-    Gz000 = grad[ix0, iy0, iz0, 2]
-    Gz001 = grad[ix0, iy0, iz1, 2]
-    Gz010 = grad[ix0, iy1, iz0, 2]
-    Gz011 = grad[ix0, iy1, iz1, 2]
-    Gz100 = grad[ix1, iy0, iz0, 2]
-    Gz101 = grad[ix1, iy0, iz1, 2]
-    Gz110 = grad[ix1, iy1, iz0, 2]
-    Gz111 = grad[ix1, iy1, iz1, 2]
-    Gz00 = Gz000 + (Gz100-Gz000) * dx
-    Gz01 = Gz001 + (Gz101-Gz001) * dx
-    Gz10 = Gz010 + (Gz110-Gz010) * dx
-    Gz11 = Gz011 + (Gz111-Gz011) * dx
-    Gz0 = Gz00 + (Gz10 - Gz00) * dy
-    Gz1 = Gz01 + (Gz11 - Gz01) * dy
-    Gz = Gz0 + (Gz1 - Gz0) * dz
+    v = np.array([vm(1, 1, lat, lon, depth)
+                    for (lat, lon, depth) in cc.to_geographic()])
 
-    return(np.array((Gx, Gy, Gz)))
+    cc = cc.dot(R)
+    cc[:,2] = seispy.constants.EARTH_RADIUS - cc[:,2]
+    xmin, xmax = min(cc[:,0]), max(cc[:,0])
+    ymin, ymax = min(cc[:,1]), max(cc[:,1])
+    zmin, zmax = min(cc[:,2]), max(cc[:,2])
+
+    cc = np.reshape(cc, (nx, ny, nz, 3)).astype(np.float64)
+    v = np.reshape(v, (nx, ny, nz)).astype(np.float64)
+
+    vgrid = {"velocity": v,
+             "coords": cc,
+             "dx": np.float64((xmax - xmin) / (nx - 1)),
+             "dy": np.float64((ymax - ymin) / (ny - 1)),
+             "dz": np.float64((zmax - zmin) / (nz - 1)),
+             "xmin": xmin, "xmax": xmax,
+             "ymin": ymin, "ymax": ymax,
+             "zmin": zmin, "zmax": zmax,
+             "nx": nx, "ny": ny, "nz": nz,
+             "R": R, "Rinv": Rinv}
+    return(vgrid)
+
+def plot_v(v, vgrid):
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    cc = vgrid["coords"]
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1, projection="3d")
+    cax = ax.scatter(cc[..., 0], cc[...,1], cc[...,2],
+                     s=1,
+                     c=v,
+                     #vmin=-1.5,
+                     #vmax=1.5,
+                     cmap=plt.get_cmap("jet_r"))
+    ax.set_xlabel("E [km]")
+    ax.set_ylabel("N [km]")
+    ax.set_zlabel("Depth [km]")
+    ax.set_zlim(-10,250)
+    ax.invert_zaxis()
+    fig.colorbar(cax)
+    #ax.set_zlim((6271, 6521))
+    plt.show()
+
+def interp_grad(grad, vgrid, xyz):
+    dx, dy, dz = vgrid["dx"], vgrid["dy"], vgrid["dz"]
+    ix = xyz[0] / dx
+    iy = xyz[1] / dy
+    iz = (vgrid["zmax"] - xyz[2]) / dz
+    ix0, ix1 = max(int(ix), 0), min(int(ix) + 1, vgrid["nx"] - 1)
+    iy0, iy1 = max(int(iy), 0), min(int(iy) + 1, vgrid["ny"] - 1)
+    iz0, iz1 = max(int(iz), 0), min(int(iz) + 1, vgrid["nz"] - 1)
+
+    Gx000, Gy000, Gz000 = grad[ix0, iy0, iz0]
+    Gx001, Gy001, Gz001 = grad[ix0, iy0, iz1]
+    Gx010, Gy010, Gz010 = grad[ix0, iy1, iz0]
+    Gx011, Gy011, Gz011 = grad[ix0, iy1, iz1]
+    Gx100, Gy100, Gz100 = grad[ix1, iy0, iz0]
+    Gx101, Gy101, Gz101 = grad[ix1, iy0, iz1]
+    Gx110, Gy110, Gz110 = grad[ix1, iy1, iz0]
+    Gx111, Gy111, Gz111 = grad[ix1, iy1, iz1]
+
+    Gx00 = Gx000 + (Gx100-Gx000) * (ix - ix0)
+    Gx01 = Gx001 + (Gx101-Gx001) * (ix - ix0)
+    Gx10 = Gx010 + (Gx110-Gx010) * (ix - ix0)
+    Gx11 = Gx011 + (Gx111-Gx011) * (ix - ix0)
+    Gx0 = Gx00 + (Gx10 - Gx00) * (iy - iy0)
+    Gx1 = Gx01 + (Gx11 - Gx01) * (iy - iy0)
+    Gx = Gx0 + (Gx1 - Gx0) * (iz - iz0)
+
+    Gy00 = Gy000 + (Gy100-Gy000) * (ix - ix0)
+    Gy01 = Gy001 + (Gy101-Gy001) * (ix - ix0)
+    Gy10 = Gy010 + (Gy110-Gy010) * (ix - ix0)
+    Gy11 = Gy011 + (Gy111-Gy011) * (ix - ix0)
+    Gy0 = Gy00 + (Gy10 - Gy00) * (iy - iy0)
+    Gy1 = Gy01 + (Gy11 - Gy01) * (iy - iy0)
+    Gy = Gy0 + (Gy1 - Gy0) * (iz - iz0)
+
+    Gz00 = Gz000 + (Gz100-Gz000) * (ix - ix0)
+    Gz01 = Gz001 + (Gz101-Gz001) * (ix - ix0)
+    Gz10 = Gz010 + (Gz110-Gz010) * (ix - ix0)
+    Gz11 = Gz011 + (Gz111-Gz011) * (ix - ix0)
+    Gz0 = Gz00 + (Gz10 - Gz00) * (iy - iy0)
+    Gz1 = Gz01 + (Gz11 - Gz01) * (iy - iy0)
+    Gz = Gz0 + (Gz1 - Gz0) * (iz - iz0)
+
+    return(np.array((Gx, Gy, -Gz)))
 
 def trace_ray_runge_kutta(u, vgrid, start, finish):
     h = 0.1
-    grad0 = np.stack(np.gradient(u), axis=3)
-    grad = lambda p: interp_grad(grad0, p)
+    dx, dy, dz = vgrid["dx"], vgrid["dy"], vgrid["dz"]
+    grad0 = np.stack(np.gradient(u, dx, dy, dz), axis=3)
+    grad = lambda xyz: interp_grad(grad0, vgrid, xyz)
+    start = seispy.coords.as_geographic(start).to_cartesian().dot(vgrid["R"])
+    finish = seispy.coords.as_geographic(finish).to_cartesian().dot(vgrid["R"])
+    start[2] = seispy.constants.EARTH_RADIUS - start[2]
+    finish[2] = seispy.constants.EARTH_RADIUS - finish[2]
+    print("START:", start)
+    print("FINISH:", finish)
     ray = np.array([finish])
     while np.sqrt(np.sum(np.square(ray[-1]-start))) > h:
         g0 = grad(ray[-1])
@@ -247,13 +243,10 @@ def trace_ray_runge_kutta(u, vgrid, start, finish):
                                   + h/3 * g1\
                                   + h/3 * g2\
                                   + h/6 * g3)))
-        print(np.sqrt(np.sum(np.square(ray[-2]-start)))-
-                np.sqrt(np.sum(np.square(ray[-1]-start))),
-                np.sqrt(np.sum(np.square(ray[-1]-start))))
+        print(ray[-1])
         if np.sqrt(np.sum(np.square(ray[-1]-start))) > \
                 np.sqrt(np.sum(np.square(ray[-2]-start))):
             break
-        print(ray[-1])
     return(ray)
 
 def trace_ray_euler(u, start, finish):
@@ -288,22 +281,20 @@ def trace_ray_euler(u, start, finish):
         ray.append((xi, yi, zi))
     return(np.array(ray))
 
-def plot_rays(u, rays):
+def plot_rays(u, vgrid, rays):
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
-    X, Y, Z = np.meshgrid(range(Nx),
-                          range(Ny),
-                          range(Nz),
-                          indexing="ij")
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1, projection="3d")
     for ray in rays:
         ax.plot(ray[:,0], ray[:,1], ray[:,2])
-    #cb = ax.scatter(X, Y, Z,
-    #                c=u,
-    #                cmap=plt.get_cmap("jet_r"),
-    #                alpha=0.2)
-    #fig.colorbar(cb)
+    cc = vgrid["coords"]
+    cb = ax.scatter(cc[...,0], cc[...,1], cc[...,2],
+                    c=u,
+                    cmap=plt.get_cmap("jet_r"),
+                    alpha=0.2)
+    ax.invert_zaxis()
+    fig.colorbar(cb)
     plt.show()
 
 def plot_uv(u, vgrid):
@@ -326,8 +317,10 @@ def plot_uv(u, vgrid):
     #ax = fig.add_subplot(1, 2, 2, projection="3d")
     ax = fig.add_subplot(1, 1, 1, projection="3d")
     ax.set_title("Travel-time field")
-    ax.set_zlim((6251, 6521))
-    cb = ax.scatter(cc[...,0], cc[...,1], cc[...,2], c=u, cmap=plt.get_cmap("jet_r"))
+    ax.set_zlim((-10, 250))
+    cb = ax.scatter(cc[...,0], cc[...,1], cc[...,2],
+                    c=u,
+                    cmap=plt.get_cmap("jet_r"))
     plt.show()
 
 if __name__ == "__main__":
