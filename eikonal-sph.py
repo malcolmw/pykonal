@@ -6,56 +6,56 @@ import time
 pi = np.pi
 
 VELOCITY_MODEL = "data/VpVs.dat"
-SOURCE = (33.0, -116.0, 12.0)
+SOURCE = (33.5, -116.5, 12.0)
+OUTFILE = open("/Users/malcolcw/Desktop/pykonal.out", "w")
 
 def main():
     vgrid = prep_vmod()
+    sc, grid = vgrid["coords"], vgrid["grid"]
+    #plot_vgrid(vgrid)
     u = np.ones(vgrid["velocity"].shape) * float('inf')
     u = np.ma.masked_array(u, mask=False)
-#####
+################################################################################
+# Initialize source.
     live = []
     heapq.heapify(live)
-    source = (0, 15, 15)
-    u[source] = 0
-    u.mask[source] = True
-    heapq.heappush(live, (u[source], source))
-#####
+    source = seispy.coords.as_geographic(SOURCE).to_spherical()
+    irho = (source[0] - grid.rho0) / (grid.drho)
+    itheta = (source[1] - grid.theta0) / (grid.dtheta)
+    iphi = (source[2] - grid.phi0) / (grid.dphi)
+    irho0, irho1 = max(int(irho), 0), min(int(irho)+1, grid.nrho-1)
+    itheta0, itheta1 = max(int(itheta), 0), min(int(itheta)+1, grid.ntheta-1)
+    iphi0, iphi1 = max(int(iphi), 0), min(int(iphi)+1, grid.nphi-1)
+    for i, j, k in [(irho0, itheta0, iphi0),
+                    (irho0, itheta0, iphi1),
+                    (irho0, itheta1, iphi0),
+                    (irho0, itheta1, iphi1),
+                    (irho1, itheta0, iphi0),
+                    (irho1, itheta0, iphi1),
+                    (irho1, itheta1, iphi0),
+                    (irho1, itheta1, iphi1)]:
+        u[i, j, k] = np.linalg.norm(source.to_cartesian() - sc[i, j, k].to_cartesian()) / vgrid["velocity"][i, j, k]
+        u.mask[i, j, k] = True
+        heapq.heappush(live, (u[i, j, k], (i, j, k)))
+    live.sort()
+################################################################################
+# Solve eikonal equation
     t = time.time()
     print("Starting update")
     while len(live) > 0:
         u, live = update(u, vgrid, live)
     print("Update took %.3f s" % (time.time() - t))
     u = np.ma.getdata(u)
-    grad = nabla(u, vgrid)
-    print(grad.shape)
-    vgrid["velocity"] = grad[...,0]
-    plot_vgrid(vgrid)
-    vgrid["velocity"] = grad[...,1]
-    plot_vgrid(vgrid)
-    vgrid["velocity"] = grad[...,2]
-    plot_vgrid(vgrid)
+################################################################################
+    ugrid = {"u": u, "grid": grid, "coords": sc, "gamma": vgrid["gamma"],
+             "gammainv": vgrid["gammainv"]}
+    finish = seispy.coords.as_geographic([34.0, -117.0, 0.0])
+    rays = [trace_ray_runge_kutta(ugrid, source.to_geographic(), finish)]
+    rays = [r.to_cartesian().dot(vgrid["gamma"]) for r in rays]
+    plot_rays(u, vgrid, rays,
+              source.to_cartesian().dot(vgrid["gamma"]),
+              finish.to_cartesian().dot(vgrid["gamma"]))
 
-def nabla(u, vgrid):
-    grid = vgrid["grid"]
-    sc = vgrid["coords"]
-    dudr = np.concatenate(([(u[1] - u[0])/grid.drho],
-                           (u[2:] - 2*u[1:-1] + u[:-2])/grid.drho**2,
-                           [(u[-1] - u[-2])/grid.drho]),
-                           axis=0)
-    dudt = np.concatenate((np.reshape([(u[:,1] - u[:,0])/(sc[:,0,:,0]*grid.dtheta)], (sc.shape[0], 1, sc.shape[2])),
-                            (u[:,2:] - 2*u[:,1:-1] + u[:,:-2])\
-                                    /(sc[:,1:-1,:,0]*grid.dtheta)**2,
-                           np.reshape([(u[:,-1] - u[:,-2])/(sc[:,-1,:,0]*grid.dtheta)], (sc.shape[0], 1, sc.shape[2]))),
-                           axis=1)
-
-    dudp = np.concatenate((np.reshape([(u[:,:,1] - u[:,:,0])\
-                                /(sc[:,:,0,0]*np.cos(sc[:,:,0,1])*grid.dphi)],(sc.shape[0], sc.shape[1], 1)),
-                           (u[:,:,2:] - 2*u[:,:,1:-1] + u[:,:,:-2])\
-                                /(sc[:,:,1:-1,0]*np.cos(sc[:,:,1:-1,1])*grid.dphi)**2,
-                           np.reshape([(u[:,:,-2] - u[:,:,-1])\
-                                /(sc[:,:,-1,0]*np.cos(sc[:,:,-1,1])*grid.dphi)], (sc.shape[0], sc.shape[1], 1))),
-                         axis=2)
-    return(np.stack((dudr, dudt, dudp), axis=3))
 
 def update(u, vgrid, live):
     v = vgrid["velocity"]
@@ -83,9 +83,11 @@ def update(u, vgrid, live):
                  u0[i, j, min(k+1, u0.shape[2]-1)])
         ur, ddr2 = (ur, 1/drho**2) if ur < u[i, j, k] else (0, 0)
         ut, ddt2 = (ut, 1/(rho*dtheta)**2) if ut < u[i, j, k] else (0, 0)
-        up, ddp2 = (up, 1/(rho*np.cos(theta)*dphi)**2) if up < u[i, j, k] else (0, 0)
+        up, ddp2 = (up, 1/(rho*np.sin(theta)*dphi)**2) if up < u[i, j, k] else (0, 0)
 
         A = ddr2 + ddt2 + ddp2
+        if A == 0:
+            continue
         B = -2 * (ur*ddr2 + ut*ddt2 + up*ddp2)
         C = (ur**2)*ddr2 + (ut**2)*ddt2 + (up**2)*ddp2 - 1/v[i, j, k]**2
 
@@ -93,7 +95,11 @@ def update(u, vgrid, live):
         #    print("A, B, C = %g, %g, %g" % (A, B, C), ddr2, ddt2, ddp2)
         #    print(ur, ut, up, u[i, j, k])
         #    print(active, (i, j, k))
-        u[i, j, k] = (-B + max(0, np.sqrt(B**2 - 4*A*C))) / (2*A)
+        try:
+            u[i, j, k] = (-B + max(0, np.sqrt(B**2 - 4*A*C))) / (2*A)
+        except ZeroDivisionError:
+            print(u[i, j, k], A, B, C, i, j, k)
+            exit()
     u.mask[active] = True
     indices = [l[1] for l in live]
     for ijk in near:
@@ -109,8 +115,7 @@ def prep_vmod():
     vm = seispy.velocity.VelocityModel(VELOCITY_MODEL,
                                        fmt="FANG")
     grid = vm.v_type_grids[1][1]["grid"]
-    sc = seispy.coords.SphericalCoordinates(8)
-    sc = seispy.coords.as_spherical([(rho, theta, phi) 
+    sc = seispy.coords.as_spherical([(rho, theta, phi)
             for rho in np.linspace(grid.rho0,
                                    grid.rho0 + (grid.nrho-1)*grid.drho,
                                    grid.nrho)
@@ -126,85 +131,140 @@ def prep_vmod():
     grid.drho = np.float64(grid.drho)
     grid.dtheta = np.float64(grid.dtheta)
     grid.dphi = np.float64(grid.dphi)
+    gamma = seispy.coords.rotation_matrix(grid.phi0 + (grid.nphi - 1) * grid.dphi / 2,
+                                          grid.theta0 + (grid.ntheta - 1) * grid.dtheta / 2,
+                                          pi/2)
     vgrid = {"velocity": vm.v_type_grids[1][1]["data"],
              "coords": sc,
-             "grid": grid}
+             "grid": grid,
+             "gamma": gamma,
+             "gammainv": np.linalg.inv(gamma)}
     return(vgrid)
 
 def plot_vgrid(vgrid):
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
-    cc = vgrid["coords"].to_cartesian().rotate(vgrid["grid"].phi0,
-                                               vgrid["grid"].theta0,
-                                               pi/2)
+    cc = vgrid["coords"].to_cartesian().dot(vgrid["gamma"])
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1, projection="3d")
-    cax = ax.scatter(cc[..., 0], cc[...,1], cc[...,2],
+    cax = ax.scatter(cc[...,0], cc[...,1], cc[...,2],
                      s=1,
                      c=vgrid["velocity"],
-                     #vmin=-1.5,
-                     #vmax=1.5,
                      cmap=plt.get_cmap("jet_r"))
     fig.colorbar(cax)
     plt.show()
 
-def interp_grad(grad, vgrid, xyz):
-    dx, dy, dz = vgrid["dx"], vgrid["dy"], vgrid["dz"]
-    ix = xyz[0] / dx
-    iy = xyz[1] / dy
-    iz = (vgrid["zmax"] - xyz[2]) / dz
-    ix0, ix1 = max(int(ix), 0), min(int(ix) + 1, vgrid["nx"] - 1)
-    iy0, iy1 = max(int(iy), 0), min(int(iy) + 1, vgrid["ny"] - 1)
-    iz0, iz1 = max(int(iz), 0), min(int(iz) + 1, vgrid["nz"] - 1)
+def gradient(ugrid):
+    grid = ugrid["grid"]
+    sc = ugrid["coords"]
+    u = ugrid["u"]
+# Trim boundary layers
+    sc = sc[1:-1, 1:-1, 1:-1]
+# Central difference
+    Gr = (u[2:, 1:-1, 1:-1] - u[:-2, 1:-1, 1:-1]) / (2*grid.drho)
+    Gt = (1 / sc[..., 0]) \
+            * (u[1:-1, 2:, 1:-1] - u[1:-1, :-2, 1:-1]) / (2 * grid.dtheta)
+    Gp = (1 / (sc[..., 0] * np.sin(sc[...,1]))) \
+            * (u[1:-1, 1:-1, 2:] - u[1:-1, 1:-1, :-2]) / (2 * grid.dphi)
+    lat0, lon0, depth0 = sc[-1, -1, 0].to_geographic()
+    grid = seispy.geogrid.GeoGrid3D(lat0, lon0, depth0,
+                                    grid.ntheta - 2,
+                                    grid.nphi - 2,
+                                    grid.nrho - 2,
+                                    grid.dtheta * 180/pi,
+                                    grid.dphi * 180/pi,
+                                    grid.drho)
+    gradient = {"G": np.stack((Gr, Gt, Gp), axis=3),
+                "coords": sc,
+                "grid": grid,
+                "gamma": ugrid["gamma"],
+                "gammainv": ugrid["gammainv"]}
+    return(gradient)
 
-    Gx000, Gy000, Gz000 = grad[ix0, iy0, iz0]
-    Gx001, Gy001, Gz001 = grad[ix0, iy0, iz1]
-    Gx010, Gy010, Gz010 = grad[ix0, iy1, iz0]
-    Gx011, Gy011, Gz011 = grad[ix0, iy1, iz1]
-    Gx100, Gy100, Gz100 = grad[ix1, iy0, iz0]
-    Gx101, Gy101, Gz101 = grad[ix1, iy0, iz1]
-    Gx110, Gy110, Gz110 = grad[ix1, iy1, iz0]
-    Gx111, Gy111, Gz111 = grad[ix1, iy1, iz1]
+def gradient_as_cartesian(gradient):
+    G = gradient["G"]
+    sc = gradient["coords"]
+    Gx = G[..., 0] * np.sin(sc[..., 1]) * np.cos(sc[..., 2])\
+            + G[..., 1] * np.cos(sc[..., 1]) * np.cos(sc[..., 2])\
+            - G[..., 2] * np.sin(sc[..., 2])
+    Gy = G[..., 0] * np.sin(sc[..., 1]) * np.sin(sc[..., 2])\
+            + G[..., 1] * np.cos(sc[..., 1]) * np.sin(sc[..., 2])\
+            + G[..., 2] * np.cos(sc[..., 2])
+    Gz = G[..., 0] * np.cos(sc[...,1]) - G[..., 1] * np.sin(sc[..., 1])
+    gradient = {"G": np.stack((Gx, Gy, Gz), axis=3),
+                "coords": sc.to_cartesian(),
+                "gamma": gradient["gamma"],
+                "gammainv": gradient["gammainv"]}
+    return(gradient)
 
-    Gx00 = Gx000 + (Gx100-Gx000) * (ix - ix0)
-    Gx01 = Gx001 + (Gx101-Gx001) * (ix - ix0)
-    Gx10 = Gx010 + (Gx110-Gx010) * (ix - ix0)
-    Gx11 = Gx011 + (Gx111-Gx011) * (ix - ix0)
-    Gx0 = Gx00 + (Gx10 - Gx00) * (iy - iy0)
-    Gx1 = Gx01 + (Gx11 - Gx01) * (iy - iy0)
-    Gx = Gx0 + (Gx1 - Gx0) * (iz - iz0)
 
-    Gy00 = Gy000 + (Gy100-Gy000) * (ix - ix0)
-    Gy01 = Gy001 + (Gy101-Gy001) * (ix - ix0)
-    Gy10 = Gy010 + (Gy110-Gy010) * (ix - ix0)
-    Gy11 = Gy011 + (Gy111-Gy011) * (ix - ix0)
-    Gy0 = Gy00 + (Gy10 - Gy00) * (iy - iy0)
-    Gy1 = Gy01 + (Gy11 - Gy01) * (iy - iy0)
-    Gy = Gy0 + (Gy1 - Gy0) * (iz - iz0)
+def interpolate_gradient(gradient, xyz):
+    rtp = seispy.coords.as_cartesian(xyz).dot(gradient["gammainv"]).to_spherical()
+    grid = gradient["grid"]
+    irho = (rtp[0] - grid.rho0) / grid.drho
+    itheta = (rtp[1] - grid.theta0) / grid.dtheta
+    iphi = (rtp[2] - grid.phi0) / grid.dphi
+    irho0, irho1 = max(int(irho), 0), min(int(irho) + 1, grid.nrho - 1)
+    itheta0, itheta1 = max(int(itheta), 0), min(int(itheta) + 1, grid.ntheta - 1)
+    iphi0, iphi1 = max(int(iphi), 0), min(int(iphi) + 1, grid.nphi - 1)
 
-    Gz00 = Gz000 + (Gz100-Gz000) * (ix - ix0)
-    Gz01 = Gz001 + (Gz101-Gz001) * (ix - ix0)
-    Gz10 = Gz010 + (Gz110-Gz010) * (ix - ix0)
-    Gz11 = Gz011 + (Gz111-Gz011) * (ix - ix0)
-    Gz0 = Gz00 + (Gz10 - Gz00) * (iy - iy0)
-    Gz1 = Gz01 + (Gz11 - Gz01) * (iy - iy0)
-    Gz = Gz0 + (Gz1 - Gz0) * (iz - iz0)
+    Gr000, Gt000, Gp000 = gradient["G"][irho0, itheta0, iphi0]
+    Gr001, Gt001, Gp001 = gradient["G"][irho0, itheta0, iphi1]
+    Gr010, Gt010, Gp010 = gradient["G"][irho0, itheta1, iphi0]
+    Gr011, Gt011, Gp011 = gradient["G"][irho0, itheta1, iphi1]
+    Gr100, Gt100, Gp100 = gradient["G"][irho1, itheta0, iphi0]
+    Gr101, Gt101, Gp101 = gradient["G"][irho1, itheta0, iphi1]
+    Gr110, Gt110, Gp110 = gradient["G"][irho1, itheta1, iphi0]
+    Gr111, Gt111, Gp111 = gradient["G"][irho1, itheta1, iphi1]
 
-    return(np.array((Gx, Gy, -Gz)))
+    Gr00 = Gr000 + (Gr100-Gr000) * (irho - irho0)
+    Gr01 = Gr001 + (Gr101-Gr001) * (irho - irho0)
+    Gr10 = Gr010 + (Gr110-Gr010) * (irho - irho0)
+    Gr11 = Gr011 + (Gr111-Gr011) * (irho - irho0)
+    Gr0 = Gr00 + (Gr10 - Gr00) * (itheta - itheta0)
+    Gr1 = Gr01 + (Gr11 - Gr01) * (itheta - itheta0)
+    Gr = Gr0 + (Gr1 - Gr0) * (iphi - iphi0)
 
-def trace_ray_runge_kutta(u, vgrid, start, finish):
-    h = 0.1
-    dx, dy, dz = vgrid["dx"], vgrid["dy"], vgrid["dz"]
-    grad0 = np.stack(np.gradient(u, dx, dy, dz), axis=3)
+    Gt00 = Gt000 + (Gt100-Gt000) * (irho - irho0)
+    Gt01 = Gt001 + (Gt101-Gt001) * (irho - irho0)
+    Gt10 = Gt010 + (Gt110-Gt010) * (irho - irho0)
+    Gt11 = Gt011 + (Gt111-Gt011) * (irho - irho0)
+    Gt0 = Gt00 + (Gt10 - Gt00) * (itheta - itheta0)
+    Gt1 = Gt01 + (Gt11 - Gt01) * (itheta - itheta0)
+    Gt = Gt0 + (Gt1 - Gt0) * (iphi - iphi0)
+
+    Gp00 = Gp000 + (Gp100-Gp000) * (irho - irho0)
+    Gp01 = Gp001 + (Gp101-Gp001) * (irho - irho0)
+    Gp10 = Gp010 + (Gp110-Gp010) * (irho - irho0)
+    Gp11 = Gp011 + (Gp111-Gp011) * (irho - irho0)
+    Gp0 = Gp00 + (Gp10 - Gp00) * (itheta - itheta0)
+    Gp1 = Gp01 + (Gp11 - Gp01) * (itheta - itheta0)
+    Gp = Gp0 + (Gp1 - Gp0) * (iphi - iphi0)
+
+    Gx = Gr * np.sin(rtp[1]) * np.cos(rtp[2])\
+            + Gt * np.cos(rtp[1]) * np.cos(rtp[2])\
+            - Gp * np.sin(rtp[2])
+    Gy = Gr * np.sin(rtp[1]) * np.sin(rtp[2])\
+            + Gt * np.cos(rtp[1]) * np.sin(rtp[2])\
+            + Gp * np.cos(rtp[2])
+    Gz = Gr * np.cos(rtp[1]) - Gt * np.sin(rtp[1])
+
+    return(seispy.coords.as_cartesian([Gx, Gy, Gz]).dot(gradient["gamma"]))
+
+def trace_ray_runge_kutta2(u, vgrid, start, finish):
+    h = 0.01
+    grad0 = gradient(u, vgrid)
     grad = lambda xyz: interp_grad(grad0, vgrid, xyz)
-    start = seispy.coords.as_geographic(start).to_cartesian().dot(vgrid["R"])
-    finish = seispy.coords.as_geographic(finish).to_cartesian().dot(vgrid["R"])
-    start[2] = seispy.constants.EARTH_RADIUS - start[2]
-    finish[2] = seispy.constants.EARTH_RADIUS - finish[2]
+    gamma = vgrid["gamma"]
+    gammainv = vgrid["gammainv"]
+    start = seispy.coords.as_geographic(start).to_cartesian().dot(gamma)
+    finish = seispy.coords.as_geographic(finish).to_cartesian().dot(gamma)
     print("START:", start)
     print("FINISH:", finish)
     ray = np.array([finish])
-    while np.sqrt(np.sum(np.square(ray[-1]-start))) > h:
+    #for i in range(10000):
+    while np.linalg.norm(ray[-1] - start) > h:
+        print(ray[-1], start)
         g0 = grad(ray[-1])
         g0 /= np.linalg.norm(g0)
         p1 = ray[-1] - h/2 * g0
@@ -221,58 +281,47 @@ def trace_ray_runge_kutta(u, vgrid, start, finish):
                                   + h/3 * g1\
                                   + h/3 * g2\
                                   + h/6 * g3)))
-        #print(ray[-1])
-        if np.sqrt(np.sum(np.square(ray[-1]-start))) > \
-                np.sqrt(np.sum(np.square(ray[-2]-start))):
-            break
-    return(ray)
+        print(ray[-1])
+    return(seispy.coords.as_cartesian(ray).dot(gammainv).to_spherical())
 
-def trace_ray_euler(u, start, finish):
-    """
-    """
-    h = 0.01
-    grad = np.gradient(u)
-    grad = np.stack((-1*grad[0], -1*grad[1], -1*grad[2]), axis=3)
-    ray = [finish]
-    xi, yi, zi = finish + grad[finish] / np.linalg.norm(grad[finish])
-    ray.append((xi, yi, zi))
-    while np.sqrt((xi-start[0])**2+(yi-start[1])**2+(zi-start[2])**2) > 0.1:
-        dGdx = (grad[int(xi)+1, int(yi), int(zi)][0]\
-                - grad[int(xi), int(yi), int(zi)][0])
-        dGdy = (grad[int(xi), int(yi)+1, int(zi)][1]\
-                - grad[int(xi), int(yi), int(zi)][1])
-        dGdz = (grad[int(xi), int(yi), int(zi)+1][2]\
-                - grad[int(xi), int(yi), int(zi)][2])
-        G0 = grad[int(xi), int(yi), int(zi)]
-        gradi = G0 + [xi % 1 * dGdx, yi % 1 * dGdy, zi % 1 * dGdz]
-        dx, dy, dz = gradi / np.linalg.norm(gradi) \
-                   * min(h, 1/np.linalg.norm(gradi))
-        print(1/np.linalg.norm(gradi))
-        xi += dx
-        yi += dy
-        zi += dz
-        if np.sqrt((xi-start[0])**2+(yi-start[1])**2+(zi-start[2])**2)\
-                > np.sqrt((ray[-1][0]-start[0])**2\
-                        + (ray[-1][1]-start[1])**2\
-                        + (ray[-1][2]-start[2])**2):
-            return(np.array(ray))
-        ray.append((xi, yi, zi))
-    return(np.array(ray))
 
-def plot_rays(u, vgrid, rays):
+def trace_ray_runge_kutta(ugrid, start, finish):
+    h = 0.1
+    grad0 = gradient(ugrid)
+    print(grad0["grid"])
+    grad = lambda xyz: interpolate_gradient(grad0, xyz)
+    gamma = ugrid["gamma"]
+    gammainv = ugrid["gammainv"]
+    print("START:", start)
+    print("FINISH:", finish)
+    start = seispy.coords.as_geographic(start).to_cartesian().dot(gamma)
+    finish = seispy.coords.as_geographic(finish).to_cartesian().dot(gamma)
+    ray = np.array([finish])
+    while len(ray) == 1 or np.linalg.norm(ray[-1]-start) < np.linalg.norm(ray[-2] - start):
+        k1 = -grad(ray[-1])
+        k2 = -grad(ray[-1] + h/2*k1)
+        k3 = -grad(ray[-1] + h/2*k2)
+        k4 = -grad(ray[-1] + h*k3)
+        ray = np.vstack((ray,
+                        ray[-1] + h/6*(k1 + 2*k2 + 2*k3 + k4)))
+        print(ray[-1], np.linalg.norm(ray[-1]-start), np.linalg.norm(ray[-2] - start))
+    return(seispy.coords.as_cartesian(ray).dot(gammainv).to_spherical())
+
+def plot_rays(u, vgrid, rays, start, finish):
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1, projection="3d")
     for ray in rays:
-        ax.plot(ray[:,0], ray[:,1], ray[:,2])
-    cc = vgrid["coords"]
+        ax.plot(ray[:,0], ray[:,1], ray[:,2], "k")
+    cc = vgrid["coords"].to_cartesian().dot(vgrid["gamma"])
     cb = ax.scatter(cc[...,0], cc[...,1], cc[...,2],
                     c=u,
                     cmap=plt.get_cmap("jet_r"),
-                    alpha=0.2)
-    ax.invert_zaxis()
-    fig.colorbar(cb)
+                    alpha=0.05)
+    ax.scatter(start[...,0], start[...,1], start[...,2], s=20, c="k")
+    ax.scatter(finish[...,0], finish[...,1], finish[...,2], s=20, c="k")
+    #fig.colorbar(cb)
     plt.show()
 
 def plot_uv(u, vgrid):
