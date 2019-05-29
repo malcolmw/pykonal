@@ -1,0 +1,6 @@
+build
+jupyter/.ipynb_checkpoints
+pykonal.egg-info
+*.c
+*.html
+*.so
