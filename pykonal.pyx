@@ -151,13 +151,13 @@ def update(
 
             a = ddx2 + ddy2
             if a == 0:
-                print(f'WARNING :: a == 0 {nbr_ix}, {nbr_iy}')
+                #print(f'WARNING :: a == 0 {nbr_ix}, {nbr_iy}')
                 continue
             b = -2 * (ddx2 * ux + ddy2 * uy)
             c = (ddx2 * (ux ** 2) + ddy2 * (uy ** 2) - slo2)
             if b ** 2 < 4 * a * c:
                 unew = -b / (2 * a) # This may not be mathematically permissible...
-                print(f'WARNING :: determinant is negative {nbr_ix}, {nbr_iy}: {100*np.sqrt(4 * a * c - b**2)/(2*a)/unew}')
+                #print(f'WARNING :: determinant is negative {nbr_ix}, {nbr_iy}: {100*np.sqrt(4 * a * c - b**2)/(2*a)/unew}')
             else:
                 unew = (-b + libc.math.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
             uu[nbr_ix, nbr_iy] = unew
