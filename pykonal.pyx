@@ -7,17 +7,6 @@ DTYPE = np.float32
 
 cdef float MAX_FLOAT = np.finfo(DTYPE).max 
 
-class EikonalSolver2D(object):
-    def __init__(self, vv, dx, dy):
-        self._vv = vv
-        self._dx, self._dy = dx, dy
-
-    def solve(self):
-        uu, is_alive, close, is_far = init_lists(self._vv)
-        init_source(uu, close, is_far)
-        update(uu, self._vv, is_alive, close, is_far, self._dx, self._dy)
-        self.uu =  uu
-
 
 def init_lists(vv):
     uu       = np.full(vv.shape, fill_value=MAX_FLOAT, dtype=DTYPE)
