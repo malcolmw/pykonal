@@ -2,5 +2,6 @@ build
 jupyter/.ipynb_checkpoints
 pykonal.egg-info
 *.c
+*.cpp
 *.html
 *.so
