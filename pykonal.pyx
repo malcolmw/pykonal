@@ -94,6 +94,10 @@ class EikonalSolver2D(EikonalSolver):
             self._sources.append((idx, t))
 
 
+    def clear_sources(self):
+        self._sources = []
+
+
 class GridND(object):
     def __init__(self, ndim=2):
         self._ndim = ndim
