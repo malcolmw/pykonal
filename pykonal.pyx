@@ -52,7 +52,7 @@ class EikonalSolver(object):
     @property
     def uu(self):
         if self._solved is False:
-            self._solve()
+            self.solve()
             self._solved = True
         return (self._uu)
 
@@ -62,7 +62,7 @@ class EikonalSolver2D(EikonalSolver):
         super().__init__(ndim=2)
     
 
-    def _solve(self):
+    def solve(self):
         cdef cpp_vector[Index2D] close
         cdef np.ndarray[float, ndim=2] uu
         cdef np.ndarray[np.npy_bool, ndim=2, cast=True] is_alive, is_far
