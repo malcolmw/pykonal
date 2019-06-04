@@ -57,6 +57,34 @@ class EikonalSolver(object):
         return (self._uu)
 
 
+    def trace_ray(self, *args, method='euler', step_size=1, tolerance=1e-2):
+        if method.upper() == 'EULER':
+            return (self._trace_ray_euler(*args, step_size=step_size, tolerance=tolerance))
+        else:
+            raise (NotImplementedError('Only Euler integration is implemented yet'))
+
+
+    def _trace_ray_euler(self, start, step_size=1, tolerance=1e-2):
+        # Create a flat array of coordinates
+        coords = self.pgrid[...].reshape(
+            np.prod(self.pgrid.npts), 
+            self._ndim
+        )
+        # Create an interpolator for the Gradient field
+        gg = scipy.interpolate.LinearNDInterpolator(
+            coords, 
+            np.stack([arr.flatten() for arr in np.gradient(self.uu)]).T
+        )
+        uu = scipy.interpolate.LinearNDInterpolator(
+            coords, 
+            self.uu.flatten()
+        )
+        ray = [np.array(start)]
+        while uu(ray[-1]) > tolerance:
+            ray.append(ray[-1] - step_size * gg(ray[-1])[0])
+        return (np.array(ray))
+
+
 class EikonalSolver2D(EikonalSolver):
     def __init__(self):
         super().__init__(ndim=2)
