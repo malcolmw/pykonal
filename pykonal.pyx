@@ -1,6 +1,9 @@
 # distutils: language = c++
 
+import collections
+import itertools
 import numpy as np
+import scipy.interpolate
 cimport numpy as np
 cimport libc.math
 from libcpp.vector cimport vector as cpp_vector
@@ -10,7 +13,237 @@ DTYPE = np.float32
 cdef float MAX_FLOAT = np.finfo(DTYPE).max 
 cdef struct Index2D:
     Py_ssize_t ix, iy
+                                      
+                                      
+class EikonalSolver(object):
+    def __init__(self, ndim=2):
+        self._ndim    = ndim
+        self._class   = str(self.__class__).strip('>\'').split('.')[-1]
+        self._vgrid   = GridND(ndim=ndim)
+        self._pgrid   = GridND(ndim=ndim)
+        self._solved  = False
+        self._sources = []
+
+
+    @property
+    def vgrid(self):
+        return (self._vgrid)
+
+
+    @property
+    def vv(self):
+        return (self._vv)
+    
+    @vv.setter
+    def vv(self, value):
+        if value.shape != self.vgrid[...].shape[:-1]:
+            raise (ValueError('SHAPE ERROR!'))
+        wwv = self.vgrid[:]
+        wwv = wwv.reshape(np.prod(wwv.shape[:-1]), wwv.shape[-1])
+        linterp = scipy.interpolate.LinearNDInterpolator(wwv, value.flatten())
+        self._vv = linterp(self.pgrid[:]).astype(np.float32)
+
+
+    @property
+    def pgrid(self):
+        return (self._pgrid)
+
+
+    @property
+    def uu(self):
+        if self._solved is False:
+            self._solve()
+            self._solved = True
+        return (self._uu)
+
+
+class EikonalSolver2D(EikonalSolver):
+    def __init__(self):
+        super().__init__(ndim=2)
+    
+
+    def _solve(self):
+        cdef cpp_vector[Index2D] close
+        cdef np.ndarray[float, ndim=2] uu
+        cdef np.ndarray[np.npy_bool, ndim=2, cast=True] is_alive, is_far
+
+        shape = self.pgrid[...].shape[:-1]
+        uu       = np.full(shape, fill_value=MAX_FLOAT, dtype=DTYPE)
+        is_alive = np.full(shape, fill_value=False, dtype=np.bool)
+        is_far   = np.full(shape, fill_value=True, dtype=np.bool)
         
+        init_sources(self._sources, uu, close, is_far)
+        update(uu, self.vv, is_alive, close, is_far, self.pgrid.delta[0], self.pgrid.delta[1])
+        
+        self._uu = uu
+
+
+#    def add_source(self, src, t0=0):
+#        for iax in (0, 1):
+#            if self.pgrid.ww_min[iax] > src[iax] or self.pgrid.ww_max[iax] < src[iax]:
+#                raise (ValueError('Source location lies outside of propagation grid'))
+#        idx0 = (np.asarray(src) - self.pgrid.ww_min) / self.pgrid.delta
+#        idxs = [tuple(idx0.astype(np.int32))]
+#        mod = np.argwhere(np.mod(idx0, 1) != 0).flatten()
+#        for delta in itertools.product(*[[0, 1] if idx in mod else [0] for idx in range(2)]):
+#            idxs.append(idxs[0] + np.array(delta))
+#        for idx in idxs:
+#            t = t0 + np.sqrt(np.sum(np.square(self.pgrid[idx] - src))) / self.vv[idx]
+#            self._sources.append((idx, t))
+
+
+    def add_source(self, src, t0=0):
+        for iax in (0, 1):
+            if self.pgrid.ww_min[iax] > src[iax] or self.pgrid.ww_max[iax] < src[iax]:
+                raise (ValueError('Source location lies outside of propagation grid'))
+        idx00 = (np.asarray(src) - self.pgrid.ww_min) / self.pgrid.delta
+        idx0 = idx00.astype(np.int32)
+        mod = np.argwhere(np.mod(idx00, 1) != 0).flatten()
+        idxs = []
+        for delta in itertools.product(*[[0, 1] if idx in mod else [0] for idx in range(2)]):
+            idxs.append(idx0 + np.array(delta))
+        for idx in idxs:
+            idx = tuple(idx)
+            t = t0 + np.sqrt(np.sum(np.square(self.pgrid[idx] - src))) / self.vv[idx]
+            self._sources.append((idx, t))
+
+
+class GridND(object):
+    def __init__(self, ndim=2):
+        self._ndim = ndim
+        self._class = str(self.__class__).strip('>\'').split('.')[-1]
+        self._update = True
+
+
+    @property
+    def delta(self):
+        return(self._delta)
+    
+    @delta.setter
+    def delta(self, value):
+        if not isinstance(value, collections.Iterable):
+            raise (TypeError(f'{self._class}.delta value must be <Iterable> type'))
+        if len(value) != self._ndim:
+            raise (ValueError(f'{self._class}.delta must have len() == {self._ndim}'))
+        self._delta = np.array(value, dtype=np.float32)
+        self._update = True
+
+
+    @property
+    def npts(self):
+        return (self._npts)
+    
+    @npts.setter
+    def npts(self, value):
+        if not isinstance(value, collections.Iterable):
+            raise (TypeError(f'{self._class}.delta value must be <Iterable> type'))
+        if len(value) != self._ndim:
+            raise (ValueError(f'{self._class}.delta must have len() == {self._ndim}'))
+        self._npts = np.array(value, dtype=np.int32)
+        self._update = True
+
+
+    @property
+    def ww_min(self):
+        return (self._ww_min)
+    
+    @ww_min.setter
+    def ww_min(self, value):
+        if not isinstance(value, collections.Iterable):
+            raise (TypeError(f'{self._class}.ww_min value must be <Iterable> type'))
+        if len(value) != self._ndim:
+            raise (ValueError(f'{self._class}.ww_min must have len() == {self._ndim}'))
+        self._ww_min = np.array(value, dtype=np.float32)
+        self._update = True
+
+
+    @property
+    def ww_max(self):
+        for attr in ('_delta', '_npts', '_ww_min'):
+            if not hasattr(self, attr):
+                raise (AttributeError(f'{self._class}.{attr.lstrip("_")} not initialized'))
+        return (self._ww_min + self._delta * (self._npts - 1))
+
+
+    @property
+    def mesh(self):
+        '''
+        mesh is indexed like [iww0, iww1, ..., iwwN, iax]
+        '''
+        if self._update is True:
+            mesh = np.meshgrid(
+                *[
+                    np.linspace(
+                        self.ww_min[idx], 
+                        self.ww_max[idx],
+                        self.npts[idx]
+                    )
+                    for idx in range(self._ndim)
+                ], 
+                indexing='ij'
+            )
+            self._mesh = np.moveaxis(np.stack(mesh), 0, -1)
+            self._update = False
+        return (self._mesh)
+
+
+    def __getitem__(self, key):
+        return (self.mesh[key])
+
+
+cdef Index2D heap_pop(cpp_vector[Index2D]& idxs, float[:,:] uu):
+    '''Pop the smallest item off the heap, maintaining the heap invariant.'''
+    cdef Index2D last, idx_return
+    
+    last = idxs[idxs.size()-1]
+    idxs.pop_back()
+    if idxs.size() > 0:
+        idx_return = idxs[0]
+        idxs[0] = last
+        sift_up(idxs, uu, 0)
+        return (idx_return)
+    return (last)
+
+
+cdef void heap_push(cpp_vector[Index2D]& idxs, float[:,:] uu, Index2D idx):
+    '''Push item onto heap, maintaining the heap invariant.'''
+    idxs.push_back(idx)
+    sift_down(idxs, uu, 0, idxs.size()-1)
+
+
+cdef void init_sources(
+    list sources,
+    float[:,:] uu, 
+    cpp_vector[Index2D]& close, 
+    np.ndarray[np.npy_bool, ndim=2, cast=True] is_far
+):
+    cdef Index2D idx
+    
+    for source in sources:
+        idx.ix, idx.iy = source[0][0], source[0][1]
+        uu[idx.ix, idx.iy] = source[1]
+        is_far[idx.ix, idx.iy] = False
+        heap_push(close, uu, idx)
+
+
+cdef void sift_down(cpp_vector[Index2D]& idxs, float[:,:] uu, Py_ssize_t j_start, Py_ssize_t j):
+    '''Doc string'''
+    cdef Py_ssize_t j_parent
+    cdef Index2D idx_new, idx_parent
+    
+    idx_new = idxs[j]
+    # Follow the path to the root, moving parents down until finding a place
+    # newitem fits.
+    while j > j_start:
+        j_parent = (j - 1) >> 1
+        idx_parent = idxs[j_parent]
+        if uu[idx_new.ix, idx_new.iy] < uu[idx_parent.ix, idx_parent.iy]:
+            idxs[j] = idx_parent
+            j = j_parent
+            continue
+        break
+    idxs[j] = idx_new
+
 
 cdef void sift_up(cpp_vector[Index2D]& idxs, float[:,:] uu, Py_ssize_t j_start):
     '''Doc string'''
@@ -36,65 +269,6 @@ cdef void sift_up(cpp_vector[Index2D]& idxs, float[:,:] uu, Py_ssize_t j_start):
     # to its final resting place (by sifting its parents down).
     idxs[j] = idx_new
     sift_down(idxs, uu, j_start, j)
-
-
-cdef void sift_down(cpp_vector[Index2D]& idxs, float[:,:] uu, Py_ssize_t j_start, Py_ssize_t j):
-    '''Doc string'''
-    cdef Py_ssize_t j_parent
-    cdef Index2D idx_new, idx_parent
-    
-    idx_new = idxs[j]
-    # Follow the path to the root, moving parents down until finding a place
-    # newitem fits.
-    while j > j_start:
-        j_parent = (j - 1) >> 1
-        idx_parent = idxs[j_parent]
-        if uu[idx_new.ix, idx_new.iy] < uu[idx_parent.ix, idx_parent.iy]:
-            idxs[j] = idx_parent
-            j = j_parent
-            continue
-        break
-    idxs[j] = idx_new
-
-
-cdef void heap_push(cpp_vector[Index2D]& idxs, float[:,:] uu, Index2D idx):
-    '''Push item onto heap, maintaining the heap invariant.'''
-    idxs.push_back(idx)
-    sift_down(idxs, uu, 0, idxs.size()-1)
-
-cdef Index2D heap_pop(cpp_vector[Index2D]& idxs, float[:,:] uu):
-    '''Pop the smallest item off the heap, maintaining the heap invariant.'''
-    cdef Index2D last, idx_return
-    
-    last = idxs[idxs.size()-1]
-    idxs.pop_back()
-    if idxs.size() > 0:
-        idx_return = idxs[0]
-        idxs[0] = last
-        sift_up(idxs, uu, 0)
-        return (idx_return)
-    return (last)
-
-
-def init_lists(vv):
-    cdef cpp_vector[Index2D] close
-    uu       = np.full(vv.shape, fill_value=MAX_FLOAT, dtype=DTYPE)
-    is_alive = np.full(vv.shape, fill_value=False, dtype=np.bool)
-    is_far   = np.full(vv.shape, fill_value=True, dtype=np.bool)
-    return (uu, is_alive, close, is_far)
-
-
-cdef void init_source(
-    float[:,:] uu, 
-    cpp_vector[Index2D]& close, 
-    np.ndarray[np.npy_bool, ndim=2, cast=True] is_far
-):
-    cdef Index2D idx
-    idx.ix, idx.iy = 0, 0
-    uu[idx.ix, idx.iy] = 0
-    is_far[idx.ix, idx.iy] = False
-    heap_push(close, uu, idx)
-
 
 cdef bint stencil(
         Py_ssize_t ix, Py_ssize_t iy, Py_ssize_t max_ix, Py_ssize_t max_iy
@@ -262,14 +436,3 @@ cdef void update(
                 idx.ix, idx.iy = nbr_ix, nbr_iy
                 heap_push(close, uu, idx)
                 is_far[nbr[0], nbr[1]] = False
-
-
-def pykonal(vv):
-    cdef cpp_vector[Index2D] close
-    cdef np.ndarray[float, ndim=2] uu
-    
-    dx, dy = 1, 1
-    uu, is_alive, close, is_far = init_lists(vv)
-    init_source(uu, close, is_far)
-    update(uu, vv, is_alive, close, is_far, dx, dy)
-    return (uu)
