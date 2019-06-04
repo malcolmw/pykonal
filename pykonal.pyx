@@ -32,7 +32,7 @@ class EikonalSolver(object):
 
     @property
     def vv(self):
-        return (self._vv)
+        return (self._vv.copy())
     
     @vv.setter
     def vv(self, value):
