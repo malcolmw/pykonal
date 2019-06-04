@@ -13,8 +13,8 @@ DTYPE = np.float32
 cdef float MAX_FLOAT = np.finfo(DTYPE).max 
 cdef struct Index2D:
     Py_ssize_t ix, iy
-                                      
-                                      
+
+
 class EikonalSolver(object):
     def __init__(self, ndim=2):
         self._ndim    = ndim
@@ -73,30 +73,16 @@ class EikonalSolver2D(EikonalSolver):
         is_far   = np.full(shape, fill_value=True, dtype=np.bool)
         
         init_sources(self._sources, uu, close, is_far)
-        update(uu, self.vv, is_alive, close, is_far, self.pgrid.delta[0], self.pgrid.delta[1])
+        update(uu, self.vv, is_alive, close, is_far, self.pgrid.node_intervals[0], self.pgrid.node_intervals[1])
         
         self._uu = uu
 
 
-#    def add_source(self, src, t0=0):
-#        for iax in (0, 1):
-#            if self.pgrid.ww_min[iax] > src[iax] or self.pgrid.ww_max[iax] < src[iax]:
-#                raise (ValueError('Source location lies outside of propagation grid'))
-#        idx0 = (np.asarray(src) - self.pgrid.ww_min) / self.pgrid.delta
-#        idxs = [tuple(idx0.astype(np.int32))]
-#        mod = np.argwhere(np.mod(idx0, 1) != 0).flatten()
-#        for delta in itertools.product(*[[0, 1] if idx in mod else [0] for idx in range(2)]):
-#            idxs.append(idxs[0] + np.array(delta))
-#        for idx in idxs:
-#            t = t0 + np.sqrt(np.sum(np.square(self.pgrid[idx] - src))) / self.vv[idx]
-#            self._sources.append((idx, t))
-
-
     def add_source(self, src, t0=0):
         for iax in (0, 1):
-            if self.pgrid.ww_min[iax] > src[iax] or self.pgrid.ww_max[iax] < src[iax]:
+            if self.pgrid.min_coords[iax] > src[iax] or self.pgrid.max_coords[iax] < src[iax]:
                 raise (ValueError('Source location lies outside of propagation grid'))
-        idx00 = (np.asarray(src) - self.pgrid.ww_min) / self.pgrid.delta
+        idx00 = (np.asarray(src) - self.pgrid.min_coords) / self.pgrid.node_intervals
         idx0 = idx00.astype(np.int32)
         mod = np.argwhere(np.mod(idx00, 1) != 0).flatten()
         idxs = []
@@ -116,16 +102,16 @@ class GridND(object):
 
 
     @property
-    def delta(self):
-        return(self._delta)
+    def node_intervals(self):
+        return(self._node_intervals)
     
-    @delta.setter
-    def delta(self, value):
+    @node_intervals.setter
+    def node_intervals(self, value):
         if not isinstance(value, collections.Iterable):
-            raise (TypeError(f'{self._class}.delta value must be <Iterable> type'))
+            raise (TypeError(f'{self._class}.node_intervals value must be <Iterable> type'))
         if len(value) != self._ndim:
-            raise (ValueError(f'{self._class}.delta must have len() == {self._ndim}'))
-        self._delta = np.array(value, dtype=np.float32)
+            raise (ValueError(f'{self._class}.node_intervals must have len() == {self._ndim}'))
+        self._node_intervals = np.array(value, dtype=np.float32)
         self._update = True
 
 
@@ -144,25 +130,25 @@ class GridND(object):
 
 
     @property
-    def ww_min(self):
-        return (self._ww_min)
+    def min_coords(self):
+        return (self._min_coords)
     
-    @ww_min.setter
-    def ww_min(self, value):
+    @min_coords.setter
+    def min_coords(self, value):
         if not isinstance(value, collections.Iterable):
-            raise (TypeError(f'{self._class}.ww_min value must be <Iterable> type'))
+            raise (TypeError(f'{self._class}.min_coords value must be <Iterable> type'))
         if len(value) != self._ndim:
-            raise (ValueError(f'{self._class}.ww_min must have len() == {self._ndim}'))
-        self._ww_min = np.array(value, dtype=np.float32)
+            raise (ValueError(f'{self._class}.min_coords must have len() == {self._ndim}'))
+        self._min_coords = np.array(value, dtype=np.float32)
         self._update = True
 
 
     @property
-    def ww_max(self):
-        for attr in ('_delta', '_npts', '_ww_min'):
+    def max_coords(self):
+        for attr in ('_node_intervals', '_npts', '_min_coords'):
             if not hasattr(self, attr):
                 raise (AttributeError(f'{self._class}.{attr.lstrip("_")} not initialized'))
-        return (self._ww_min + self._delta * (self._npts - 1))
+        return (self.min_coords + self.node_intervals * (self.npts - 1))
 
 
     @property
@@ -174,8 +160,8 @@ class GridND(object):
             mesh = np.meshgrid(
                 *[
                     np.linspace(
-                        self.ww_min[idx], 
-                        self.ww_max[idx],
+                        self.min_coords[idx], 
+                        self.max_coords[idx],
                         self.npts[idx]
                     )
                     for idx in range(self._ndim)
