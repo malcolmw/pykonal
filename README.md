@@ -11,6 +11,8 @@ This code implements a mixed- (first- and second-) order finite-difference solve
 ![Figure 3](figures/figure_3.png)
 ![Figure 4](figures/figure_4.png)
 ![Figure 5](figures/figure_5.png)
+![Figure 6](figures/figure_6.png)
+![Figure 7](figures/figure_7.png)
 
 ## References
 Sethian, J. A. (1996). A fast marching level set method for monotonically advancing fronts. Proceedings of the National Academy of Sciences, 93(4), 1591–1595. https://doi.org/10.1073/pnas.93.4.1591
