@@ -57,14 +57,15 @@ class EikonalSolver(object):
         return (self._uu)
 
 
-    def trace_ray(self, *args, method='euler', step_size=1, tolerance=1e-2):
+    def trace_ray(self, *args, method='euler', tolerance=1e-2):
         if method.upper() == 'EULER':
-            return (self._trace_ray_euler(*args, step_size=step_size, tolerance=tolerance))
+            return (self._trace_ray_euler(*args, tolerance=tolerance))
         else:
             raise (NotImplementedError('Only Euler integration is implemented yet'))
 
 
-    def _trace_ray_euler(self, start, step_size=1, tolerance=1e-2):
+    def _trace_ray_euler(self, start, tolerance=1e-2):
+        step_size = np.min(self.pgrid.node_intervals)
         # Create a flat array of coordinates
         coords = self.pgrid[...].reshape(
             np.prod(self.pgrid.npts), 
