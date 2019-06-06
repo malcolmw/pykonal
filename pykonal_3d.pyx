@@ -1,3 +1,4 @@
+# cython: boundscheck=False,cdivision=True
 # distutils: language = c++
 
 import collections
