@@ -358,8 +358,7 @@ cdef void update(
         np.ndarray[np.npy_bool, ndim=3, cast=True] is_far,
         float[:] dd
 ):
-    '''The update algorithm to propagate the wavefront. '''
-#     cdef Py_ssize_t       *trial_idx
+    '''The update algorithm to propagate the wavefront.'''
     cdef Py_ssize_t       i, iax, trial_ix, trial_iy, trial_iz
     cdef Py_ssize_t[6][3] nbrs
     cdef Py_ssize_t[3]    max_idx, nbr, switch
@@ -454,44 +453,45 @@ cdef void update(
                     order, drxn = bord, -1
                 else:
                     order, drxn = ford, 1
+                switch[iax] = drxn
                 if order == 2:
                     aa[iax] = 9 / (4 * dd2[iax])
                     bb[iax] = (
-                        6*uu[nbr[0]+2*drxn*switch[0], nbr[1]+2*drxn*switch[1], nbr[2]+2*drxn*switch[2]]
-                     - 24*uu[nbr[0]+  drxn*switch[0], nbr[1]  +drxn*switch[1], nbr[2]  +drxn*switch[2]]
+                        6*uu[nbr[0]+2*switch[0], nbr[1]+2*switch[1], nbr[2]+2*switch[2]]
+                     - 24*uu[nbr[0]+  switch[0], nbr[1]  +switch[1], nbr[2]  +switch[2]]
                     ) / (4 * dd2[iax])
                     cc[iax] = (
                         uu[
-                            nbr[0]+2*drxn*switch[0],
-                            nbr[1]+2*drxn*switch[1],
-                            nbr[2]+2*drxn*switch[2]
+                            nbr[0]+2*switch[0],
+                            nbr[1]+2*switch[1],
+                            nbr[2]+2*switch[2]
                         ]**2 \
                         - 8 * uu[
-                            nbr[0]+2*drxn*switch[0],
-                            nbr[1]+2*drxn*switch[1],
-                            nbr[2]+2*drxn*switch[2]
+                            nbr[0]+2*switch[0],
+                            nbr[1]+2*switch[1],
+                            nbr[2]+2*switch[2]
                         ] * uu[
-                            nbr[0]+drxn*switch[0],
-                            nbr[1]+drxn*switch[1],
-                            nbr[2]+drxn*switch[2]
+                            nbr[0]+switch[0],
+                            nbr[1]+switch[1],
+                            nbr[2]+switch[2]
                         ]
                         + 16 * uu[
-                            nbr[0]+drxn*switch[0],
-                            nbr[1]+drxn*switch[1],
-                            nbr[2]+drxn*switch[2]
+                            nbr[0]+switch[0],
+                            nbr[1]+switch[1],
+                            nbr[2]+switch[2]
                         ]**2
                     ) / (4 * dd2[iax])
                 elif order == 1:
                     aa[iax] = 1 / dd2[iax]
                     bb[iax] = -2 * uu[
-                        nbr[0]+drxn*switch[0],
-                        nbr[1]+drxn*switch[1],
-                        nbr[2]+drxn*switch[2]
+                        nbr[0]+switch[0],
+                        nbr[1]+switch[1],
+                        nbr[2]+switch[2]
                     ] / dd2[iax]
                     cc[iax] = uu[
-                        nbr[0]+drxn*switch[0],
-                        nbr[1]+drxn*switch[1],
-                        nbr[2]+drxn*switch[2]
+                        nbr[0]+switch[0],
+                        nbr[1]+switch[1],
+                        nbr[2]+switch[2]
                     ]**2 / dd2[iax]
                 elif order == 0:
                     aa[iax], bb[iax], cc[iax] = 0, 0, 0
