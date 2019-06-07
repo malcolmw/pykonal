@@ -145,6 +145,7 @@ class EikonalSolver(object):
         update(uu, self.vv, is_alive, close, is_far, self.pgrid.node_intervals)
         
         self._uu = np.array(uu)
+        self._solved = True
 
 
     def trace_ray(self, *args, method='euler', tolerance=1e-2):
@@ -360,12 +361,16 @@ cdef void update(
         float[:] dd
 ):
     '''The update algorithm to propagate the wavefront.'''
-    cdef Py_ssize_t       i, iax, trial_ix, trial_iy, trial_iz
+    cdef Py_ssize_t       i, iax, idrxn, trial_ix, trial_iy, trial_iz
     cdef Py_ssize_t[6][3] nbrs
     cdef Py_ssize_t[3]    max_idx, nbr, switch
+    cdef Py_ssize_t[2]    drxns = [-1, 1]
     cdef Index3D          trial_idx, idx
-    cdef int              bord, ford, drxn
+    cdef int              count_a = 0
+    cdef int              count_b = 0
+    cdef int[2]           order
     cdef float            a, b, c, bfd, ffd
+    cdef float[2]         fdu
     cdef float[3]         aa, bb, cc, dd2
 
     max_idx       = [is_alive.shape[0], is_alive.shape[1], is_alive.shape[2]]
@@ -411,55 +416,91 @@ cdef void update(
             # by solving the piecewise quadratic equation.
             for iax in range(3):
                 switch = [0, 0, 0]
-                switch[iax] = 1
-                if nbr[iax] > 1 \
-                        and not is_far[nbr[0]-switch[0]*2, nbr[1]-switch[1]*2, nbr[2]-switch[2]*2] \
-                        and not is_far[nbr[0]-switch[0], nbr[1]-switch[1], nbr[2]-switch[2]] \
-                        and uu[nbr[0]-switch[0]*2, nbr[1]-switch[1]*2, nbr[2]-switch[2]*2] <= uu[nbr[0]-switch[0], nbr[1]-switch[1], nbr[2]-switch[2]]:
-                    bord = 2
-                    bfd  = (
-                        3 * uu[nbr[0],             nbr[1],             nbr[2]] \
-                      - 4 * uu[nbr[0]-switch[0],   nbr[1]-switch[1],   nbr[2]-switch[2]] \
-                      +     uu[nbr[0]-switch[0]*2, nbr[1]-switch[1]*2, nbr[2]-switch[2]*2]
-                    ) / (2 * dd[iax])
-                elif nbr[iax] > 0 \
-                        and not is_far[nbr[0]-switch[0], nbr[1]-switch[1], nbr[2]-switch[2]]:
-                    bord = 1
-                    bfd  = (
-                        uu[nbr[0],           nbr[1],           nbr[2]]
-                      - uu[nbr[0]-switch[0], nbr[1]-switch[1], nbr[2]-switch[2]]
-                    ) / dd[iax]
+                idrxn = 0
+                for idrxn in range(2):
+                    switch[iax] = drxns[idrxn]
+                    if (
+                               (drxns[idrxn] == -1 and nbr[iax] > 1) 
+                            or (drxns[idrxn] == 1 and nbr[iax] < max_idx[iax] - 2)
+                    )\
+                            and not is_far[
+                                nbr[0]+2*switch[0], 
+                                nbr[1]+2*switch[1], 
+                                nbr[2]+2*switch[2]
+                            ]\
+                            and not is_far[
+                                nbr[0]+switch[0],
+                                nbr[1]+switch[1],
+                                nbr[2]+switch[2]
+                            ]\
+                            and uu[
+                                nbr[0]+2*switch[0], 
+                                nbr[1]+2*switch[1], 
+                                nbr[2]+2*switch[2]
+                            ] <= uu[
+                                nbr[0]+switch[0], 
+                                nbr[1]+switch[1], 
+                                nbr[2]+switch[2]
+                            ]\
+                    :
+                        order[idrxn] = 2
+                        fdu[idrxn]  = drxns[idrxn] * (
+                          - 3 * uu[
+                              nbr[0],
+                              nbr[1],
+                              nbr[2]
+                          ]\
+                          + 4 * uu[
+                              nbr[0]+switch[0],
+                              nbr[1]+switch[1],
+                              nbr[2]+switch[2]
+                          ]\
+                          -     uu[
+                              nbr[0]+2*switch[0],
+                              nbr[1]+2*switch[1],
+                              nbr[2]+2*switch[2]
+                          ]
+                        ) / (2 * dd[iax])
+                    elif (
+                               (drxns[idrxn] == -1 and nbr[iax] > 0) 
+                            or (drxns[idrxn] ==  1 and nbr[iax] < max_idx[iax] - 1)
+                    )\
+                            and not is_far[
+                                nbr[0]+switch[0],
+                                nbr[1]+switch[1],
+                                nbr[2]+switch[2]
+                            ]\
+                    :
+                        order[idrxn] = 1
+                        fdu[idrxn] = drxns[idrxn] * (
+                            uu[
+                                nbr[0]+switch[0],
+                                nbr[1]+switch[1],
+                                nbr[2]+switch[2]
+                            ]
+                          - uu[nbr[0], nbr[1], nbr[2]]
+                        ) / dd[iax]
+                    else:
+                        order[idrxn], fdu[idrxn] = 0, 0
+                if fdu[0] > -fdu[1]:
+                    # Do the update using the backward operator
+                    idrxn, switch[iax] = 0, -1
                 else:
-                    bfd, bord = 0, 0
-                if nbr[iax] < max_idx[iax] - 2 \
-                        and not is_far[nbr[0]+switch[0]*2, nbr[1]+switch[1]*2, nbr[2]+switch[2]*2] \
-                        and not is_far[nbr[0]+switch[0],   nbr[1]+switch[1],   nbr[2]+switch[2]] \
-                        and uu[nbr[0]+switch[0]*2, nbr[1]+switch[1]*2, nbr[2]+switch[2]*2] <= uu[nbr[0]+switch[0], nbr[1]+switch[1], nbr[2]+switch[2]]:
-                    ford = 2
-                    ffd  = (
-                      - 3 * uu[nbr[0],             nbr[1],             nbr[2]] \
-                      + 4 * uu[nbr[0]+switch[0],   nbr[1]+switch[1],   nbr[2]+switch[2]] \
-                      -     uu[nbr[0]+switch[0]*2, nbr[1]+switch[1]*2, nbr[2]+switch[2]*2]
-                    ) / (2 * dd[iax])
-                elif nbr[iax] < max_idx[iax]-1 \
-                        and not is_far[nbr[0]+switch[0], nbr[1]+switch[1], nbr[2]+switch[2]]:
-                    ford = 1
-                    ffd  = (
-                        uu[nbr[0]+switch[0], nbr[1]+switch[1], nbr[2]+switch[2]]
-                      - uu[nbr[0],           nbr[1],           nbr[2]]
-                    ) / dd[iax]
-                else:
-                    ffd, ford = 0, 0
-                if bfd > -ffd:
-                    order, drxn = bord, -1
-                else:
-                    order, drxn = ford, 1
-                switch[iax] = drxn
-                if order == 2:
+                    # Do the update using the forward operator
+                    idrxn, switch[iax] = 1, 1
+                if order[idrxn] == 2:
                     aa[iax] = 9 / (4 * dd2[iax])
                     bb[iax] = (
-                        6*uu[nbr[0]+2*switch[0], nbr[1]+2*switch[1], nbr[2]+2*switch[2]]
-                     - 24*uu[nbr[0]+  switch[0], nbr[1]  +switch[1], nbr[2]  +switch[2]]
+                        6 * uu[
+                            nbr[0]+2*switch[0],
+                            nbr[1]+2*switch[1],
+                            nbr[2]+2*switch[2]
+                        ]
+                     - 24 * uu[
+                            nbr[0]+switch[0],
+                            nbr[1]+switch[1],
+                            nbr[2]+switch[2]
+                        ]
                     ) / (4 * dd2[iax])
                     cc[iax] = (
                         uu[
@@ -482,7 +523,7 @@ cdef void update(
                             nbr[2]+switch[2]
                         ]**2
                     ) / (4 * dd2[iax])
-                elif order == 1:
+                elif order[idrxn] == 1:
                     aa[iax] = 1 / dd2[iax]
                     bb[iax] = -2 * uu[
                         nbr[0]+switch[0],
@@ -494,23 +535,18 @@ cdef void update(
                         nbr[1]+switch[1],
                         nbr[2]+switch[2]
                     ]**2 / dd2[iax]
-                elif order == 0:
+                elif order[idrxn] == 0:
                     aa[iax], bb[iax], cc[iax] = 0, 0, 0
-                else:
-                    raise (Exception('Huh!?'))
             a = aa[0] + aa[1] + aa[2]
             b = bb[0] + bb[1] + bb[2]
             c = cc[0] + cc[1] + cc[2] - 1/vv[nbr[0], nbr[1], nbr[2]]**2
             if a == 0:
-#                 print(f'WARNING(2) :: a == 0 {nbr[0]}, {nbr[1]}')
+                count_a += 1
                 continue
             if b ** 2 < 4 * a * c:
                 # This may not be mathematically permissible
                 uu[nbr[0], nbr[1], nbr[2]] = -b / (2 * a)
-#                 print(
-#                     f'WARNING(2) :: determinant is negative {nbr[0]}, {nbr[1]}:'
-#                     f'{100*np.sqrt(4 * a * c - b**2)/(2*a)/uu[nbr[0], nbr[1]]}'
-#                 )
+                count_b += 1
             else:
                 uu[nbr[0], nbr[1], nbr[2]] = (
                     -b + libc.math.sqrt(b ** 2 - 4 * a * c)
@@ -522,3 +558,7 @@ cdef void update(
                 idx.ix, idx.iy, idx.iz = nbr_ix, nbr_iy, nbr_iz
                 heap_push(close, uu, idx)
                 is_far[nbr[0], nbr[1], nbr[2]] = False
+    if count_a > 0:
+        print(f'Denominator was zero {count_a} times')
+    if count_b > 0:
+        print(f'Determinant was negative {count_b} times')
