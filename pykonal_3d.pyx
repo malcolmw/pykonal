@@ -18,6 +18,11 @@ cdef struct Index3D:
     Py_ssize_t ix, iy, iz
 
 
+class OutOfBoundsError(Exception):
+    def __init__(self, msg=''):
+        self.msg = msg
+
+
 class EikonalSolver(object):
     def __init__(self, ndim=3):
         self._ndim    = ndim
@@ -27,6 +32,10 @@ class EikonalSolver(object):
         self._solved  = False
         self._sources = []
 
+
+    @property
+    def iax_null(self):
+        return (self.pgrid.iax_null)
 
     @property
     def vgrid(self):
@@ -162,18 +171,18 @@ class EikonalSolver(object):
             np.prod(self.pgrid.npts), 
             self._ndim
         )
-        # Create an interpolator for the Gradient field
-        gg = scipy.interpolate.LinearNDInterpolator(
-            coords, 
-            np.stack([arr.flatten() for arr in np.gradient(self.uu)]).T
-        )
-        uu = scipy.interpolate.LinearNDInterpolator(
-            coords, 
-            self.uu.flatten()
-        )
+        # Create an interpolator for the gradient field
+        gg = np.moveaxis(np.stack(np.gradient(self.uu, axis=[iax for iax in range(self.ndim) if iax not in self.iax_null ])), 0, -1)
+        for iax in self.iax_null:
+            gg = np.insert(gg, iax, np.zeros(self.pgrid.npts), axis=-1)
+        grad = LinearInterpolator3D(self.pgrid, gg)
+        # Create an interpolator for the travel-time field
+        uu = LinearInterpolator3D(self.pgrid, self.uu)
         ray = [np.array(start)]
         while uu(ray[-1]) > tolerance:
-            ray.append(ray[-1] - step_size * gg(ray[-1])[0])
+            ray.append(ray[-1] - step_size * grad(ray[-1]))
+            if np.any(ray[-1] < self.pgrid.min_coords) or np.any(ray[-1] > self.pgrid.max_coords):
+                raise (OutOfBoundsError('Ray went out of bounds'))
         return (np.array(ray))
 
 
@@ -182,7 +191,17 @@ class GridND(object):
         self._ndim = ndim
         self._class = str(self.__class__).strip('>\'').split('.')[-1]
         self._update = True
+        self._iax_null = None
 
+
+    @property
+    def iax_null(self):
+        return (self._iax_null)
+
+    @iax_null.setter
+    def iax_null(self, value):
+        self._iax_null = value
+        
 
     @property
     def node_intervals(self):
@@ -208,6 +227,7 @@ class GridND(object):
             raise (TypeError(f'{self._class}.delta value must be <Iterable> type'))
         if len(value) != self._ndim:
             raise (ValueError(f'{self._class}.delta must have len() == {self._ndim}'))
+        self.iax_null = np.argwhere(value == 1).flatten()
         self._npts = np.array(value, dtype=np.int32)
         self._update = True
 
@@ -258,6 +278,57 @@ class GridND(object):
 
     def __getitem__(self, key):
         return (self.mesh[key])
+
+
+class LinearInterpolator3D(object):
+    def __init__(self, grid, values):
+        self._grid = grid
+        self._values = values
+        self._max_idx = grid.npts - 1
+
+
+    @property
+    def grid(self):
+        return (self._grid)
+
+    @property
+    def max_idx(self):
+        return (self._max_idx)
+
+
+    @property
+    def values(self):
+        return(self._values)        
+
+
+    def __call__(self, point):
+        point = np.array(point)
+        dx, dy, dz = self.grid.node_intervals
+        idx = (point - self.grid.min_coords) / self.grid.node_intervals
+        for iax in range(3):
+            if (idx[iax] <= 0 and iax not in self.grid.iax_null) or idx[iax] > self.max_idx[iax]:
+                raise(OutOfBoundsError('Point outside of interpolation domain requested'))
+        delta_x, delta_y, delta_z = np.mod(idx, 1) * self.grid.node_intervals
+        ix, iy, iz = idx.astype(np.int32)
+        dix = 0 if 0 in self.grid.iax_null else 1
+        diy = 0 if 1 in self.grid.iax_null else 1
+        diz = 0 if 2 in self.grid.iax_null else 1
+        f000 = self.values[ix,     iy,     iz]
+        f100 = self.values[ix+dix, iy,     iz]
+        f110 = self.values[ix+dix, iy+diy, iz]
+        f101 = self.values[ix+dix, iy,     iz+diz]
+        f111 = self.values[ix+dix, iy+diy, iz+diz]
+        f010 = self.values[ix,     iy+diy, iz]
+        f011 = self.values[ix,     iy+diy, iz+diz]
+        f001 = self.values[ix,     iy,     iz+diz]
+        f00  = f000 + (f100 - f000) / dx * delta_x
+        f10  = f010 + (f110 - f010) / dx * delta_x
+        f01  = f001 + (f101 - f001) / dx * delta_x
+        f11  = f011 + (f111 - f011) / dx * delta_x
+        f0   = f00  + (f10  - f00)  / dy * delta_y
+        f1   = f01  + (f11  - f01)  / dy * delta_y
+        f    = f0   + (f1   - f0)   / dz * delta_z
+        return (f)
 
 
 cdef Index3D heap_pop(cpp_vector[Index3D]& idxs, float[:,:,:] uu):
