@@ -494,12 +494,12 @@ cdef void update(
                                (drxns[idrxn] == -1 and nbr[iax] > 1) 
                             or (drxns[idrxn] == 1 and nbr[iax] < max_idx[iax] - 2)
                     )\
-                            and not is_far[
+                            and is_alive[
                                 nbr[0]+2*switch[0], 
                                 nbr[1]+2*switch[1], 
                                 nbr[2]+2*switch[2]
                             ]\
-                            and not is_far[
+                            and is_alive[
                                 nbr[0]+switch[0],
                                 nbr[1]+switch[1],
                                 nbr[2]+switch[2]
@@ -536,7 +536,7 @@ cdef void update(
                                (drxns[idrxn] == -1 and nbr[iax] > 0) 
                             or (drxns[idrxn] ==  1 and nbr[iax] < max_idx[iax] - 1)
                     )\
-                            and not is_far[
+                            and is_alive[
                                 nbr[0]+switch[0],
                                 nbr[1]+switch[1],
                                 nbr[2]+switch[2]
