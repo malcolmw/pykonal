@@ -553,9 +553,6 @@ cdef void update(
                         ) / dd[iax]
                     else:
                         order[idrxn], fdu[idrxn] = 0, 0
-                    ####
-                    order[idrxn] = min(1, order[idrxn])
-                    ####
                 if fdu[0] > -fdu[1]:
                     # Do the update using the backward operator
                     idrxn, switch[iax] = 0, -1
