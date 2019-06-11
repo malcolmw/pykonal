@@ -164,7 +164,7 @@ class EikonalSolver(object):
         is_alive = np.full(shape, fill_value=False, dtype=np.bool)
         is_far   = np.full(shape, fill_value=True, dtype=np.bool)
         
-        init_sources(self._sources, uu, close, is_far)
+        init_sources(self.sources, uu, close, is_far)
         update(uu, self.vv_p, is_alive, close, is_far, self.pgrid.node_intervals)
         
         self._uu = np.array(uu)
