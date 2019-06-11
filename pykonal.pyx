@@ -127,19 +127,27 @@ class EikonalSolver(object):
 
 
     def add_source(self, src, t0=0):
-        for iax in range(self.ndim):
-            if self.pgrid.min_coords[iax] > src[iax] or self.pgrid.max_coords[iax] < src[iax]:
-                raise (ValueError('Source location lies outside of propagation grid'))
-        idx00 = (np.asarray(src) - self.pgrid.min_coords) / self.pgrid.node_intervals
-        idx0 = idx00.astype(np.int32)
-        mod = np.argwhere(np.mod(idx00, 1) != 0).flatten()
-        idxs = []
-        for delta in itertools.product(*[[0, 1] if idx in mod else [0] for idx in range(self.ndim)]):
-            idxs.append(idx0 + np.array(delta))
-        for idx in idxs:
-            idx = tuple(idx)
-            t = t0 + np.sqrt(np.sum(np.square(self.pgrid[idx] - src))) / self.vv_p[idx]
-            self._sources.append((idx, t))
+        self._sources.append((src, t0))
+    
+
+    @property
+    def sources(self):
+        sources = []
+        for src, t0 in self._sources:
+            for iax in range(self.ndim):
+                if self.pgrid.min_coords[iax] > src[iax] or self.pgrid.max_coords[iax] < src[iax]:
+                    raise (ValueError('Source location lies outside of propagation grid'))
+            idx00 = (np.asarray(src) - self.pgrid.min_coords) / self.pgrid.node_intervals
+            idx0 = idx00.astype(np.int32)
+            mod = np.argwhere(np.mod(idx00, 1) != 0).flatten()
+            idxs = []
+            for delta in itertools.product(*[[0, 1] if idx in mod else [0] for idx in range(self.ndim)]):
+                idxs.append(idx0 + np.array(delta))
+            for idx in idxs:
+                idx = tuple(idx)
+                t = t0 + np.sqrt(np.sum(np.square(self.pgrid[idx] - src))) / self.vv_p[idx]
+                sources.append((idx, t))
+        return (sources)
 
 
     def clear_sources(self):
