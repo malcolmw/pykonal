@@ -58,6 +58,11 @@ class EikonalSolver(object):
     
     @property
     def vv_p(self):
+        if np.any(self.pgrid.min_coords < self.vgrid.min_coords) \
+                or np.any(self.pgrid.max_coords > self.vgrid.max_coords):
+            raise(OutOfBoundsError('Propagation grid extends beyond velocity grid boundaries. '\
+                                   'Please re-initialize the propagation grid to lie entirely '\
+                                   'within the velocity grid'))
         old_coords = np.meshgrid(
             *[
                 np.linspace(
