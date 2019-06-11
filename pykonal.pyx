@@ -54,6 +54,10 @@ class EikonalSolver(object):
     def vv(self, value):
         if not np.all(value.shape == self.vgrid.npts):
             raise (ValueError('SHAPE ERROR!'))
+        self._vv = value
+    
+    @property
+    def vv_p(self):
         old_coords = np.meshgrid(
             *[
                 np.linspace(
@@ -98,12 +102,14 @@ class EikonalSolver(object):
             ],
             indexing='ij'
         )
-        self._vv = scipy.ndimage.map_coordinates(
-            value,
-            [idx_new[iax].flatten() for iax in range(self.ndim)],
-            output=np.float32
-        ).reshape(
-            self.pgrid.npts
+        return(
+            scipy.ndimage.map_coordinates(
+                self.vv,
+                [idx_new[iax].flatten() for iax in range(self.ndim)],
+                output=np.float32
+            ).reshape(
+                self.pgrid.npts
+            )
         )
 
 
@@ -132,7 +138,7 @@ class EikonalSolver(object):
             idxs.append(idx0 + np.array(delta))
         for idx in idxs:
             idx = tuple(idx)
-            t = t0 + np.sqrt(np.sum(np.square(self.pgrid[idx] - src))) / self.vv[idx]
+            t = t0 + np.sqrt(np.sum(np.square(self.pgrid[idx] - src))) / self.vv_p[idx]
             self._sources.append((idx, t))
 
 
@@ -151,7 +157,7 @@ class EikonalSolver(object):
         is_far   = np.full(shape, fill_value=True, dtype=np.bool)
         
         init_sources(self._sources, uu, close, is_far)
-        update(uu, self.vv, is_alive, close, is_far, self.pgrid.node_intervals)
+        update(uu, self.vv_p, is_alive, close, is_far, self.pgrid.node_intervals)
         
         self._uu = np.array(uu)
         self._solved = True
@@ -633,3 +639,4 @@ cdef void update(
         print(f'Denominator was zero {count_a} times')
     if count_b > 0:
         print(f'Determinant was negative {count_b} times')
+
