@@ -325,7 +325,7 @@ class LinearInterpolator3D(object):
         dx, dy, dz = self.grid.node_intervals
         idx = (point - self.grid.min_coords) / self.grid.node_intervals
         for iax in range(3):
-            if (idx[iax] <= 0 and iax not in self.grid.iax_null) or idx[iax] > self.max_idx[iax]:
+            if (idx[iax] < 0 and iax not in self.grid.iax_null) or idx[iax] > self.max_idx[iax]:
                 raise(OutOfBoundsError('Point outside of interpolation domain requested'))
         delta_x, delta_y, delta_z = np.mod(idx, 1) * self.grid.node_intervals
         ix, iy, iz = idx.astype(np.int32)
