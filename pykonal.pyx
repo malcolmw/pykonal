@@ -48,7 +48,7 @@ class EikonalSolver(object):
 
     @property
     def vv(self):
-        return (self._vv.copy())
+        return (self._vv)
     
     @vv.setter
     def vv(self, value):
