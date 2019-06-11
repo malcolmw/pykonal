@@ -270,7 +270,7 @@ class GridND(object):
         for attr in ('_node_intervals', '_npts', '_min_coords'):
             if not hasattr(self, attr):
                 raise (AttributeError(f'{self._class}.{attr.lstrip("_")} not initialized'))
-        return (self.min_coords + self.node_intervals * (self.npts - 1))
+        return ((self.min_coords + self.node_intervals * (self.npts - 1)).astype(np.float32))
 
 
     @property
