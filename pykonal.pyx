@@ -9,7 +9,7 @@ import scipy.ndimage
 cimport numpy as np
 cimport libc.math
 from libcpp.vector cimport vector as cpp_vector
-
+from libc.stdlib cimport malloc, free
 
 DTYPE = np.float32
 cdef float MAX_FLOAT = np.finfo(DTYPE).max
@@ -182,27 +182,65 @@ class EikonalSolver(object):
         else:
             raise (NotImplementedError('Only Euler integration is implemented yet'))
 
-
+    
     def _trace_ray_euler(self, start, tolerance=1e-2):
-        step_size = np.min(self.pgrid.node_intervals)
-        # Create a flat array of coordinates
-        coords = self.pgrid[...].reshape(
-            np.prod(self.pgrid.npts), 
-            self._ndim
+        cdef cpp_vector[float *]       ray
+        cdef float                     step_size
+        cdef float                     *point_new
+        cdef float[3]                  point_last
+        cdef Py_ssize_t                i
+        cdef np.ndarray[float, ndim=2] ray_np
+        
+        point_new = <float *> malloc(3 * sizeof(float))
+        point_new[0], point_new[1], point_new[2] = start
+        ray.push_back(point_new)
+        step_size = np.min(
+            [
+                self.pgrid.node_intervals[iax] 
+                for iax in range(self.ndim) if iax not in self.iax_null
+            ]
         )
+        # Create a flat array of coordinates
+#         coords = self.pgrid[...].reshape(
+#             np.prod(self.pgrid.npts), 
+#             self._ndim
+#         )
         # Create an interpolator for the gradient field
-        gg = np.moveaxis(np.stack(np.gradient(self.uu, axis=[iax for iax in range(self.ndim) if iax not in self.iax_null ])), 0, -1)
+        gg = np.moveaxis(
+            np.stack(
+                np.gradient(
+                    self.uu,
+                    *[
+                        self.pgrid.node_intervals[iax] 
+                        for iax in range(self.ndim) if iax not in self.iax_null
+                    ],
+                    axis=[iax for iax in range(self.ndim) if iax not in self.iax_null]
+                )
+            ),
+            0, -1
+        )
         for iax in self.iax_null:
             gg = np.insert(gg, iax, np.zeros(self.pgrid.npts), axis=-1)
-        grad = LinearInterpolator3D(self.pgrid, gg)
+        grad_x = LinearInterpolator3D(self.pgrid, gg[...,0].astype(np.float32))
+        grad_y = LinearInterpolator3D(self.pgrid, gg[...,1].astype(np.float32))
+        grad_z = LinearInterpolator3D(self.pgrid, gg[...,2].astype(np.float32))
         # Create an interpolator for the travel-time field
         uu = LinearInterpolator3D(self.pgrid, self.uu)
-        ray = [np.array(start)]
-        while uu(ray[-1]) > tolerance:
-            ray.append(ray[-1] - step_size * grad(ray[-1]))
-            if np.any(ray[-1] < self.pgrid.min_coords) or np.any(ray[-1] > self.pgrid.max_coords):
-                raise (OutOfBoundsError('Ray went out of bounds'))
-        return (np.array(ray))
+        point_last   = ray.back()
+        while uu.interpolate(point_last) > tolerance:
+            point_new = <float *> malloc(3 * sizeof(float))
+            point_new[0] = point_last[0] - step_size * grad_x.interpolate(point_last)
+            point_new[1] = point_last[1] - step_size * grad_y.interpolate(point_last)
+            point_new[2] = point_last[2] - step_size * grad_z.interpolate(point_last)
+            ray.push_back(point_new)
+            point_last   = ray.back()
+        ray_np = np.zeros((ray.size(), 3), dtype=np.float32)
+        for i in range(ray.size()):
+            ray_np[i, 0] = ray[i][0]
+            ray_np[i, 1] = ray[i][1]
+            ray_np[i, 2] = ray[i][2]
+            free(ray[i])
+        return (ray_np)
 
 
 class GridND(object):
@@ -220,7 +258,10 @@ class GridND(object):
     @iax_null.setter
     def iax_null(self, value):
         self._iax_null = value
-        
+
+    @property
+    def ndim(self):
+        return (self._ndim)
 
     @property
     def node_intervals(self):
@@ -290,7 +331,7 @@ class GridND(object):
                 ], 
                 indexing='ij'
             )
-            self._mesh = np.moveaxis(np.stack(mesh), 0, -1)
+            self._mesh = np.moveaxis(np.stack(mesh), 0, -1).astype(np.float32)
             self._update = False
         return (self._mesh)
 
@@ -299,61 +340,66 @@ class GridND(object):
         return (self.mesh[key])
 
 
-class LinearInterpolator3D(object):
+cdef class LinearInterpolator3D(object):
+    cdef float[:,:,:,:] _grid
+    cdef float[:,:,:]   _values
+    cdef float[:]       _node_intervals
+    cdef Py_ssize_t[3]  _max_idx
+    cdef bint[3]        _iax_isnull  
+
     def __init__(self, grid, values):
-        self._grid = grid
-        self._values = values
-        self._max_idx = grid.npts - 1
-
-
-    @property
-    def grid(self):
-        return (self._grid)
-
-    @property
-    def max_idx(self):
-        return (self._max_idx)
-
-
-    @property
-    def values(self):
-        return(self._values)        
+        self._grid           = grid[...]
+        self._values         = values
+        self._node_intervals = grid.node_intervals
+        self._max_idx        = grid.npts - 1
+        self._iax_isnull     = [True if iax in grid.iax_null else False for iax in range(grid.ndim)]
 
 
     def __call__(self, point):
-        point = np.array(point)
-        dx, dy, dz = self.grid.node_intervals
-        idx = (point - self.grid.min_coords) / self.grid.node_intervals
+        return (self.interpolate(np.array(point, dtype=np.float32)))
+
+
+    cpdef float interpolate(self, float[:] point):
+        cdef float           f000, f100, f110, f101, f111, f010, f011, f001
+        cdef float           f00, f10, f01, f11
+        cdef float           f0, f1
+        cdef float           f
+        cdef float[3]        delta, idx
+        cdef Py_ssize_t      ix, iy, iz, iax, dix, diy, diz
+
         for iax in range(3):
-            if (idx[iax] < 0 and iax not in self.grid.iax_null) or idx[iax] > self.max_idx[iax]:
+            idx[iax] = point[iax] / self._node_intervals[iax]
+            if (idx[iax] < 0 and self._iax_isnull[iax] == 0) or idx[iax] > self._max_idx[iax]:
                 raise(OutOfBoundsError('Point outside of interpolation domain requested'))
-        delta_x, delta_y, delta_z = np.mod(idx, 1) * self.grid.node_intervals
-        ix, iy, iz = idx.astype(np.int32)
-        dix = 0 if 0 in self.grid.iax_null else 1
-        diy = 0 if 1 in self.grid.iax_null else 1
-        diz = 0 if 2 in self.grid.iax_null else 1
-        f000 = self.values[ix,     iy,     iz]
-        f100 = self.values[ix+dix, iy,     iz]
-        f110 = self.values[ix+dix, iy+diy, iz]
-        f101 = self.values[ix+dix, iy,     iz+diz]
-        f111 = self.values[ix+dix, iy+diy, iz+diz]
-        f010 = self.values[ix,     iy+diy, iz]
-        f011 = self.values[ix,     iy+diy, iz+diz]
-        f001 = self.values[ix,     iy,     iz+diz]
-        f00  = f000 + (f100 - f000) / dx * delta_x
-        f10  = f010 + (f110 - f010) / dx * delta_x
-        f01  = f001 + (f101 - f001) / dx * delta_x
-        f11  = f011 + (f111 - f011) / dx * delta_x
-        f0   = f00  + (f10  - f00)  / dy * delta_y
-        f1   = f01  + (f11  - f01)  / dy * delta_y
-        f    = f0   + (f1   - f0)   / dz * delta_z
+            delta[iax] = (idx[iax] % 1.) * self._node_intervals[iax]
+        ix = <Py_ssize_t> idx[0]
+        iy = <Py_ssize_t> idx[1]
+        iz = <Py_ssize_t> idx[2]
+        dix = 0 if self._iax_isnull[0] == 1 else 1
+        diy = 0 if self._iax_isnull[1] == 1 else 1
+        diz = 0 if self._iax_isnull[2] == 1 else 1
+        f000 = self._values[ix,     iy,     iz]
+        f100 = self._values[ix+dix, iy,     iz]
+        f110 = self._values[ix+dix, iy+diy, iz]
+        f101 = self._values[ix+dix, iy,     iz+diz]
+        f111 = self._values[ix+dix, iy+diy, iz+diz]
+        f010 = self._values[ix,     iy+diy, iz]
+        f011 = self._values[ix,     iy+diy, iz+diz]
+        f001 = self._values[ix,     iy,     iz+diz]
+        f00  = f000 + (f100 - f000) / self._node_intervals[0] * delta[0]
+        f10  = f010 + (f110 - f010) / self._node_intervals[0] * delta[0]
+        f01  = f001 + (f101 - f001) / self._node_intervals[0] * delta[0]
+        f11  = f011 + (f111 - f011) / self._node_intervals[0] * delta[0]
+        f0   = f00  + (f10  - f00)  / self._node_intervals[1] * delta[1]
+        f1   = f01  + (f11  - f01)  / self._node_intervals[1] * delta[1]
+        f    = f0   + (f1   - f0)   / self._node_intervals[2] * delta[2]
         return (f)
 
 
 cdef Index3D heap_pop(cpp_vector[Index3D]& idxs, float[:,:,:] uu):
     '''Pop the smallest item off the heap, maintaining the heap invariant.'''
     cdef Index3D last, idx_return
-    
+
     last = idxs.back()
     idxs.pop_back()
     if idxs.size() > 0:
