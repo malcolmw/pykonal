@@ -1,7 +1,8 @@
-build
+*.DS_Store
 jupyter/.ipynb_checkpoints
-pykonal.egg-info
-*.c
-*.cpp
-*.html
-*.so
+doc/latex/main.aux
+doc/latex/main.bbl
+doc/latex/main.blg
+doc/latex/main.log
+doc/latex/main.pdf
+doc/latex/main.synctex.gz
