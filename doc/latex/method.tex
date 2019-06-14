@@ -30,37 +30,28 @@
 			\left|\nabla u_{ijk}\right| = \frac{1}{v_{ijk}}.
 	\end{equation}
 	
-	Following Eqn [8] from \citeA{Sethian1996} and the reference to \citeA{Rouy1992} therein, we use the following discrete approximation to the gradient in the LHS of Eqn (\ref{eqn:discrete_eikonal_index_form}),
+	Following Eqn [8] from \citeA{Sethian1996} and the reference to \citeA{Rouy1992} therein, we use the following discrete approximation to the gradient on the LHS of Eqn (\ref{eqn:discrete_eikonal_index_form}),
 	
 	\begin{equation}
+		\label{eqn:gradient_approximation}
 		\left|\nabla u_{ijk}\right| ^2 \approx 
-		\sum_{\xi \in \left[x, y, z\right]} max\left(D^{-\xi}_{ijk}u_{ijk}, -D^{+\xi}_{ijk}u_{ijk}, 0 \right)^2,
+		\sum_{\xi \in \left[x, y, z\right]} max\left(D^{-\xi}_{ijk}u_{ijk}, -D^{+\xi}_{ijk}u_{ijk}, 0 \right)^2
 	\end{equation}
 	
-	\noindent which implies
+	\noindent to get Eqn (\ref{eqn:discrete_eikonal_approximation})
 	
 	\begin{equation}
-		\sum_{\xi \in \left[x, y, z\right]} max\left(D^{-\xi}_{ijk}u_{ijk}, -D^{+\xi}_{ijk}u_{ijk}, 0 \right)^2 - \frac{1}{v^2_{ijk}} \approx 0,
+		\label{eqn:discrete_eikonal_approximation}
+		\sum_{\xi \in \left[x, y, z\right]} max\left(D^{-\xi}_{ijk}u_{ijk}, -D^{+\xi}_{ijk}u_{ijk}, 0 \right)^2 - \frac{1}{v^2_{ijk}} \approx 0
 	\end{equation}
 	
-	where $D^{-\xi}_{ijk}$ and $D^{+\xi}_{ijk}$ represent backward and forward finite-difference operators along the $\xi$ axis, respectively. 
-%	 and expanding the LHS of Eqn (\ref{eqn:discrete_eikonal_index_form}) yields
-%	 
-%	 \begin{equation}
-%	 	\label{eqn:discrete_eikonal_expanded}
-%		 \left(
-%			   \frac{\partial u_{ijk}}{\partial x} 
-%	 		+ \frac{\partial u_{ijk}}{\partial y}
-%	 		+ \frac{\partial u_{ijk}}{\partial z}
-%	 	\right)^2 = \frac{1}{v^2_{ijk}}.
-%	\end{equation}
-%	
-%	\noindent Eqn (\ref{eqn:discrete_eikonal_expanded}) can be approximated using finite differences:
-%	
-%	\begin{equation}
-%		\label{eqn:discrete_eikonal_approximate}
-%		\left(D_x u_{ijk} + D_y u_{ijk} + D_z u_{ijk}\right)^2 = \frac{1}{v^2_{ijk}}.
-%	\end{equation}
-%	
-%	\noindent where $D_\xi$ represents the finite difference with respect to the $\xi$ axis.
+	\noindent where $D^{-\xi}_{ijk}$ and $D^{+\xi}_{ijk}$ represent backward and forward finite-difference operators along the $\xi$ axis, respectively. 
 	\par
+
+	Eqn (\ref{eqn:discrete_eikonal_approximation}) has an ``upwind'' difference structure: The value of $u_{ijk}$ is fully determined by $\left\{u_{lmn} \mid lmn \ne ijk \text{ and } u_{lmn} < u_{ijk}\right\}$. Imposing this upwind difference structure on the approximation to the gradient results in a loss of information: Once the propagating front crosses a grid node, it can not cross it again. An approximation to the gradient without an upwind difference structure could be chosen, but this choice allows for the solution to be built by iteratively solving Eqn (\ref{eqn:discrete_eikonal_approximation}) for $u_{ijk}$, if the initial shape of the propagating front is known---i.e., if $\left\{lmn \mid u_{lmn} = 0\right\}$ is known.
+	\par
+	
+	The efficiency of the FMM depends on at least one more observation: The value of $u$ potentially needs to be updated only at the grid nodes in a narrow band in front of the propagating front---i.e. the zero level set. This observation leads to the so-called ``narrow-band'' method
+	
+	\input{figures/grid_of_nodes_A.tex}
+	\input{figures/grid_of_nodes_B.tex}
