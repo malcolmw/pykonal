@@ -168,10 +168,17 @@ class EikonalSolver(object):
         uu       = np.full(shape, fill_value=MAX_FLOAT, dtype=DTYPE)
         is_alive = np.full(shape, fill_value=False, dtype=np.bool)
         is_far   = np.full(shape, fill_value=True, dtype=np.bool)
-        
+
         init_sources(self.sources, uu, close, is_far)
-        update(uu, self.vv_p, is_alive, close, is_far, self.pgrid.node_intervals)
-        
+        self.denominator_errors, self.determinant_errors = update(
+            uu,
+            self.vv_p,
+            is_alive,
+            close,
+            is_far,
+            self.pgrid.node_intervals
+        )
+
         self._uu = np.array(uu)
         self._solved = True
 
@@ -182,7 +189,7 @@ class EikonalSolver(object):
         else:
             raise (NotImplementedError('Only Euler integration is implemented yet'))
 
-    
+
     def _trace_ray_euler(self, start, tolerance=1e-2):
         cdef cpp_vector[float *]       ray
         cdef float                     step_size
@@ -190,19 +197,19 @@ class EikonalSolver(object):
         cdef float[3]                  point_last
         cdef Py_ssize_t                i
         cdef np.ndarray[float, ndim=2] ray_np
-        
+
         point_new = <float *> malloc(3 * sizeof(float))
         point_new[0], point_new[1], point_new[2] = start
         ray.push_back(point_new)
         step_size = np.min(
             [
-                self.pgrid.node_intervals[iax] 
+                self.pgrid.node_intervals[iax]
                 for iax in range(self.ndim) if iax not in self.iax_null
             ]
         )
         # Create a flat array of coordinates
 #         coords = self.pgrid[...].reshape(
-#             np.prod(self.pgrid.npts), 
+#             np.prod(self.pgrid.npts),
 #             self._ndim
 #         )
         # Create an interpolator for the gradient field
@@ -211,10 +218,14 @@ class EikonalSolver(object):
                 np.gradient(
                     self.uu,
                     *[
-                        self.pgrid.node_intervals[iax] 
+                        self.pgrid.node_intervals[iax]
                         for iax in range(self.ndim) if iax not in self.iax_null
                     ],
-                    axis=[iax for iax in range(self.ndim) if iax not in self.iax_null]
+                    axis=[
+                        iax
+                        for iax in range(self.ndim)
+                        if iax not in self.iax_null
+                    ]
                 )
             ),
             0, -1
@@ -266,7 +277,7 @@ class GridND(object):
     @property
     def node_intervals(self):
         return(self._node_intervals)
-    
+
     @node_intervals.setter
     def node_intervals(self, value):
         if not isinstance(value, collections.Iterable):
@@ -280,7 +291,7 @@ class GridND(object):
     @property
     def npts(self):
         return (self._npts)
-    
+
     @npts.setter
     def npts(self, value):
         if not isinstance(value, collections.Iterable):
@@ -423,7 +434,7 @@ cdef void init_sources(
     np.ndarray[np.npy_bool, ndim=3, cast=True] is_far
 ):
     cdef Index3D idx
-    
+
     for source in sources:
         idx.ix, idx.iy, idx.iz = source[0][0], source[0][1], source[0][2]
         uu[idx.ix, idx.iy, idx.iz] = source[1]
@@ -454,7 +465,7 @@ cdef void sift_up(cpp_vector[Index3D]& idxs, float[:,:,:] uu, Py_ssize_t j_start
     '''Doc string'''
     cdef Py_ssize_t j, j_child, j_end, j_right
     cdef Index3D idx_child, idx_right, idx_new
-    
+
     j_end = idxs.size()
     j = j_start
     idx_new = idxs[j_start]
@@ -488,7 +499,7 @@ cdef bint stencil(
     )
 
 
-cdef void update(
+cdef tuple update(
         float[:,:,:] uu,
         float[:,:,:] vv,
         np.ndarray[np.npy_bool, ndim=3, cast=True] is_alive,
@@ -556,12 +567,12 @@ cdef void update(
                 for idrxn in range(2):
                     switch[iax] = drxns[idrxn]
                     if (
-                               (drxns[idrxn] == -1 and nbr[iax] > 1) 
+                               (drxns[idrxn] == -1 and nbr[iax] > 1)
                             or (drxns[idrxn] == 1 and nbr[iax] < max_idx[iax] - 2)
                     )\
                             and is_alive[
-                                nbr[0]+2*switch[0], 
-                                nbr[1]+2*switch[1], 
+                                nbr[0]+2*switch[0],
+                                nbr[1]+2*switch[1],
                                 nbr[2]+2*switch[2]
                             ]\
                             and is_alive[
@@ -570,12 +581,12 @@ cdef void update(
                                 nbr[2]+switch[2]
                             ]\
                             and uu[
-                                nbr[0]+2*switch[0], 
-                                nbr[1]+2*switch[1], 
+                                nbr[0]+2*switch[0],
+                                nbr[1]+2*switch[1],
                                 nbr[2]+2*switch[2]
                             ] <= uu[
-                                nbr[0]+switch[0], 
-                                nbr[1]+switch[1], 
+                                nbr[0]+switch[0],
+                                nbr[1]+switch[1],
                                 nbr[2]+switch[2]
                             ]\
                     :
@@ -598,7 +609,7 @@ cdef void update(
                           ]
                         ) / (2 * dd[iax])
                     elif (
-                               (drxns[idrxn] == -1 and nbr[iax] > 0) 
+                               (drxns[idrxn] == -1 and nbr[iax] > 0)
                             or (drxns[idrxn] ==  1 and nbr[iax] < max_idx[iax] - 1)
                     )\
                             and is_alive[
@@ -674,14 +685,15 @@ cdef void update(
                 elif order[idrxn] == 0:
                     aa[iax], bb[iax], cc[iax] = 0, 0, 0
             a = aa[0] + aa[1] + aa[2]
-            b = bb[0] + bb[1] + bb[2]
-            c = cc[0] + cc[1] + cc[2] - 1/vv[nbr[0], nbr[1], nbr[2]]**2
             if a == 0:
                 count_a += 1
                 continue
+            b = bb[0] + bb[1] + bb[2]
+            c = cc[0] + cc[1] + cc[2] - 1/vv[nbr[0], nbr[1], nbr[2]]**2
             if b ** 2 < 4 * a * c:
-                # This may not be mathematically permissible
-                uu[nbr[0], nbr[1], nbr[2]] = -b / (2 * a)
+                if -b / (2 * a) < uu[nbr[0], nbr[1], nbr[2]]:
+                    # This may not be mathematically permissible
+                    uu[nbr[0], nbr[1], nbr[2]] = -b / (2 * a)
                 count_b += 1
             else:
                 uu[nbr[0], nbr[1], nbr[2]] = (
@@ -694,8 +706,4 @@ cdef void update(
                 idx.ix, idx.iy, idx.iz = nbr_ix, nbr_iy, nbr_iz
                 heap_push(close, uu, idx)
                 is_far[nbr[0], nbr[1], nbr[2]] = False
-    if count_a > 0:
-        print(f'Denominator was zero {count_a} times')
-    if count_b > 0:
-        print(f'Determinant was negative {count_b} times')
-
+    return (count_a, count_b)

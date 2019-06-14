@@ -19,6 +19,8 @@ url             = 'https://github.com/malcolmw/pykonal'
 email           = 'malcolm.white@.usc.edu'
 author          = 'Malcolm C. A. White'
 requires_python = '>=3'
+packages        = ['pykonal']
+package_data    = {'pykonal': ['data/marmousi_2d.npz']}
 required        = ['cython', 'numpy', 'scipy']
 ext_modules     = cythonize('pykonal/pykonal.pyx')
 include_dirs    = [np.get_include()]
@@ -51,6 +53,8 @@ setup(
     author_email=email,
     python_requires=requires_python,
     url=url,
+    packages=packages,
+    package_data=package_data,
     ext_modules=ext_modules,
     include_dirs=include_dirs,
     install_requires=required,
