@@ -11,24 +11,34 @@ cimport libc.math
 from libcpp.vector cimport vector as cpp_vector
 from libc.stdlib cimport malloc, free
 
-DTYPE = np.float32
-cdef float MAX_FLOAT = np.finfo(DTYPE).max
+# Define the level of computational precision.
+# If these are changed, all appearance of 'float' and 'int' in the code
+# below will need to updated appropriately.
+DTYPE_FLOAT = np.float32
+DTYPE_INT   = np.int32
 
+# Define a floating point value to represent infinity.
+cdef float MAX_FLOAT = np.finfo(DTYPE_FLOAT).max
+
+# A simple structure to hold 3D array indices.
 cdef struct Index3D:
     Py_ssize_t ix, iy, iz
 
-
+# A simple Exception class.
 class OutOfBoundsError(Exception):
     def __init__(self, msg=''):
         self.msg = msg
 
 
 class EikonalSolver(object):
-    def __init__(self, ndim=3):
-        self._ndim    = ndim
+    def __init__(self):
+        '''
+        Solves the Eikonal equation in 3D cartesian coordinates.
+        '''
+        self._ndim    = 3
         self._class   = str(self.__class__).strip('>\'').split('.')[-1]
-        self._vgrid   = GridND(ndim=ndim)
-        self._pgrid   = GridND(ndim=ndim)
+        self._vgrid   = GridND(ndim=self._ndim)
+        self._pgrid   = GridND(ndim=self._ndim)
         self._solved  = False
         self._sources = []
 
@@ -111,7 +121,7 @@ class EikonalSolver(object):
             scipy.ndimage.map_coordinates(
                 self.vv,
                 [idx_new[iax].flatten() for iax in range(self.ndim)],
-                output=np.float32
+                output=DTYPE_FLOAT
             ).reshape(
                 self.pgrid.npts
             )
@@ -143,7 +153,7 @@ class EikonalSolver(object):
                 if self.pgrid.min_coords[iax] > src[iax] or self.pgrid.max_coords[iax] < src[iax]:
                     raise (ValueError('Source location lies outside of propagation grid'))
             idx00 = (np.asarray(src) - self.pgrid.min_coords) / self.pgrid.node_intervals
-            idx0 = idx00.astype(np.int32)
+            idx0 = idx00.astype(DTYPE_INT)
             mod = np.argwhere(np.mod(idx00, 1) != 0).flatten()
             idxs = []
             for delta in itertools.product(*[[0, 1] if idx in mod else [0] for idx in range(self.ndim)]):
@@ -165,7 +175,7 @@ class EikonalSolver(object):
         cdef np.ndarray[np.npy_bool, ndim=3, cast=True] is_alive, is_far
 
         shape = self.pgrid.npts
-        uu       = np.full(shape, fill_value=MAX_FLOAT, dtype=DTYPE)
+        uu       = np.full(shape, fill_value=MAX_FLOAT, dtype=DTYPE_FLOAT)
         is_alive = np.full(shape, fill_value=False, dtype=np.bool)
         is_far   = np.full(shape, fill_value=True, dtype=np.bool)
 
@@ -232,9 +242,9 @@ class EikonalSolver(object):
         )
         for iax in self.iax_null:
             gg = np.insert(gg, iax, np.zeros(self.pgrid.npts), axis=-1)
-        grad_x = LinearInterpolator3D(self.pgrid, gg[...,0].astype(np.float32))
-        grad_y = LinearInterpolator3D(self.pgrid, gg[...,1].astype(np.float32))
-        grad_z = LinearInterpolator3D(self.pgrid, gg[...,2].astype(np.float32))
+        grad_x = LinearInterpolator3D(self.pgrid, gg[...,0].astype(DTYPE_FLOAT))
+        grad_y = LinearInterpolator3D(self.pgrid, gg[...,1].astype(DTYPE_FLOAT))
+        grad_z = LinearInterpolator3D(self.pgrid, gg[...,2].astype(DTYPE_FLOAT))
         # Create an interpolator for the travel-time field
         uu = LinearInterpolator3D(self.pgrid, self.uu)
         point_last   = ray.back()
@@ -245,7 +255,7 @@ class EikonalSolver(object):
             point_new[2] = point_last[2] - step_size * grad_z.interpolate(point_last)
             ray.push_back(point_new)
             point_last   = ray.back()
-        ray_np = np.zeros((ray.size(), 3), dtype=np.float32)
+        ray_np = np.zeros((ray.size(), 3), dtype=DTYPE_FLOAT)
         for i in range(ray.size()):
             ray_np[i, 0] = ray[i][0]
             ray_np[i, 1] = ray[i][1]
@@ -284,7 +294,7 @@ class GridND(object):
             raise (TypeError(f'{self._class}.node_intervals value must be <Iterable> type'))
         if len(value) != self._ndim:
             raise (ValueError(f'{self._class}.node_intervals must have len() == {self._ndim}'))
-        self._node_intervals = np.array(value, dtype=np.float32)
+        self._node_intervals = np.array(value, dtype=DTYPE_FLOAT)
         self._update = True
 
 
@@ -299,7 +309,7 @@ class GridND(object):
         if len(value) != self._ndim:
             raise (ValueError(f'{self._class}.delta must have len() == {self._ndim}'))
         self.iax_null = np.argwhere(value == 1).flatten()
-        self._npts = np.array(value, dtype=np.int32)
+        self._npts = np.array(value, dtype=DTYPE_INT)
         self._update = True
 
 
@@ -313,7 +323,7 @@ class GridND(object):
             raise (TypeError(f'{self._class}.min_coords value must be <Iterable> type'))
         if len(value) != self._ndim:
             raise (ValueError(f'{self._class}.min_coords must have len() == {self._ndim}'))
-        self._min_coords = np.array(value, dtype=np.float32)
+        self._min_coords = np.array(value, dtype=DTYPE_FLOAT)
         self._update = True
 
 
@@ -322,7 +332,7 @@ class GridND(object):
         for attr in ('_node_intervals', '_npts', '_min_coords'):
             if not hasattr(self, attr):
                 raise (AttributeError(f'{self._class}.{attr.lstrip("_")} not initialized'))
-        return ((self.min_coords + self.node_intervals * (self.npts - 1)).astype(np.float32))
+        return ((self.min_coords + self.node_intervals * (self.npts - 1)).astype(DTYPE_FLOAT))
 
 
     @property
@@ -342,7 +352,7 @@ class GridND(object):
                 ], 
                 indexing='ij'
             )
-            self._mesh = np.moveaxis(np.stack(mesh), 0, -1).astype(np.float32)
+            self._mesh = np.moveaxis(np.stack(mesh), 0, -1).astype(DTYPE_FLOAT)
             self._update = False
         return (self._mesh)
 
@@ -367,7 +377,7 @@ cdef class LinearInterpolator3D(object):
 
 
     def __call__(self, point):
-        return (self.interpolate(np.array(point, dtype=np.float32)))
+        return (self.interpolate(np.array(point, dtype=DTYPE_FLOAT)))
 
 
     cpdef float interpolate(self, float[:] point):
