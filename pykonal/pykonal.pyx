@@ -65,9 +65,30 @@ class EikonalSolver(object):
         if not np.all(value.shape == self.vgrid.npts):
             raise (ValueError('SHAPE ERROR!'))
         self._vv = value
-    
+
+
     @property
     def vv_p(self):
+        cdef Py_ssize_t                ix, iy, iz
+        cdef np.ndarray[float, ndim=3] vv_p
+
+        if np.any(self.pgrid.min_coords < self.vgrid.min_coords) \
+                or np.any(self.pgrid.max_coords > self.vgrid.max_coords):
+            raise(OutOfBoundsError('Propagation grid extends beyond velocity grid boundaries. '\
+                                   'Please re-initialize the propagation grid to lie entirely '\
+                                   'within the velocity grid'))
+        vv_p  = np.zeros(self.pgrid.npts, dtype=DTYPE_FLOAT)
+        vi    = LinearInterpolator3D(self.vgrid, self.vv)
+        pgrid = self.pgrid[...]
+        for ix in range(self.pgrid.npts[0]):
+            for iy in range(self.pgrid.npts[1]):
+                for iz in range(self.pgrid.npts[2]):
+                    vv_p[ix, iy, iz] = vi(pgrid[ix, iy, iz])
+        return (vv_p)
+
+
+    @property
+    def vv_p_dep(self):
         if np.any(self.pgrid.min_coords < self.vgrid.min_coords) \
                 or np.any(self.pgrid.max_coords > self.vgrid.max_coords):
             raise(OutOfBoundsError('Propagation grid extends beyond velocity grid boundaries. '\
