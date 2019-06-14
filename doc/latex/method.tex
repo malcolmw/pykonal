@@ -4,54 +4,121 @@
 	
 	\input{figures/coordinate_axes.tex}
 
-	The arrival time, $u$, of a front that moves perpendicular to itself is related to the propagation velocity, $v$, by the Eikonal equation, Eqn (\ref{eqn:eikonal}):
+	\subsection{Statement of the problem}
+		Consider a curve $\Gamma\left(t\right)$ that propagates perpendicular to itself with velocity $v$, and let $u\left(\mathbf{r}\right)$ be the time that the front crosses the point with position vector $\mathbf{r}$. Further, let the propagation velocity also be a function of space and assume that it is strictly positive everywhere, i.e., $v\left(\mathbf{r}\right) > 0 \ \forall\ \mathbf{r}$. The relationship between $u\left(\mathbf{r}\right)$ and $v\left(\mathbf{r}\right)$ is given by the Eikonal equation,
+		
+		\begin{equation}
+			\label{eqn:eikonal}
+			\left|\nabla u\left(\mathbf{r}\right)\right| = \frac{1}{v\left(\mathbf{r}\right)},
+		\end{equation}
+		
+		\noindent and the curve $\Gamma\left(t\right)$ is given by $\Gamma\left(t\right) = \left\{\mathbf{r}\ \mid\ u\left(\mathbf{r}\right) = t\right\}$. $\Gamma\left(t\right)$ then is the $t$ level-set of $u$ and the evolution of $\Gamma$ can be tracked by solving Eqn (\ref{eqn:eikonal}) for $u\left(\mathbf{r}\right)$ if $v\left(\mathbf{r}\right)$ is known.
+		\par
+		
+		The problem is to solve Eqn (\ref{eqn:eikonal}) for $u\left(\mathbf{r}\right)$, given $\Gamma\left(t=0\right)$ and $v\left(\mathbf{r}\right)$.
 	
-	\begin{equation}
-		\label{eqn:eikonal}
-		\left|\nabla u\left(\mathbf{r}\right)\right| = \frac{1}{v\left(\mathbf{r}\right)}
-	\end{equation}
-	
-	\noindent where $\mathbf{r}$ is the position vector. Discretizing Eqn (\ref{eqn:eikonal}) gives
-	
-	\begin{equation}
-		\label{eqn:discrete_eikonal}
-		\left|\nabla u\left(i\Delta x, j\Delta y, k\Delta z\right)\right| = \frac{1}{v\left(i\Delta x, j\Delta y, k\Delta z\right)},
-	\end{equation}
-	\noindent	where $i, j, k \in \mathbb{Z}$ and $\Delta x, D\Delta y, \Delta z$ are the node intervals along the x, y, and z axis, respectively. Using index notation, i.e.,
-	
-	\begin{equation}
-		f_{ijk} = f\left(i\Delta x, j\Delta y, k\Delta z\right),
-	\end{equation}
-	
-	\noindent Eqn (\ref{eqn:discrete_eikonal}) becomes
-	
-	\begin{equation}
-		\label{eqn:discrete_eikonal_index_form}
+	\subsection{Solution}
+		\citeA{Sethian1996} proposed an efficient numerical method---the Fast Marching Method (FMM)---for approximating the solution to Eqn (\ref{eqn:eikonal}), subject to an entropy condition: \textit{$\Gamma\left(t\right)$ can only cross any point once.} Imposing this entropy condition implies that the solution obtained comprises only first arrivals; $\Gamma\left(t\right)$ propagates along the shortest (in terms of time) possible path to any point.
+		\par
+		
+		Briefly, the FMM, as implemented here, is as follows. The reader is referred to the original paper \cite{Sethian1996} for a detailed explanation.
+		\par
+		
+	\subsection{The Fast Marching Method}
+		Express Eqn (\ref{eqn:eikonal}) in discrete Cartesian coordinates:
+		
+		\begin{equation}
+			\label{eqn:discrete_eikonal_index_form}
 			\left|\nabla u_{ijk}\right| = \frac{1}{v_{ijk}}.
-	\end{equation}
+		\end{equation}
 	
-	Following Eqn [8] from \citeA{Sethian1996} and the reference to \citeA{Rouy1992} therein, we use the following discrete approximation to the gradient on the LHS of Eqn (\ref{eqn:discrete_eikonal_index_form}),
+		\noindent where
 	
-	\begin{equation}
-		\label{eqn:gradient_approximation}
-		\left|\nabla u_{ijk}\right| ^2 \approx 
-		\sum_{\xi \in \left[x, y, z\right]} max\left(D^{-\xi}_{ijk}u_{ijk}, -D^{+\xi}_{ijk}u_{ijk}, 0 \right)^2
-	\end{equation}
-	
-	\noindent to get Eqn (\ref{eqn:discrete_eikonal_approximation})
-	
-	\begin{equation}
-		\label{eqn:discrete_eikonal_approximation}
-		\sum_{\xi \in \left[x, y, z\right]} max\left(D^{-\xi}_{ijk}u_{ijk}, -D^{+\xi}_{ijk}u_{ijk}, 0 \right)^2 - \frac{1}{v^2_{ijk}} \approx 0
-	\end{equation}
-	
-	\noindent where $D^{-\xi}_{ijk}$ and $D^{+\xi}_{ijk}$ represent backward and forward finite-difference operators along the $\xi$ axis, respectively. 
-	\par
+		\begin{equation}
+			f_{ijk} \equiv f\left(i\Delta x, j\Delta y, k\Delta z\right),
+		\end{equation}
+		
+		\noindent $i, j, k \in \mathbb{Z}$ and $\Delta x, \Delta y, \Delta z$ are the discretization intervals along the x, y, and z axis, respectively.
+		\par
+		
+		Now substitute the entropy-satisfying approximation to the gradient from \citeA{Rouy1992}
+		
+		\begin{equation}
+			\label{eqn:gradient_approximation}
+			\left|\nabla u_{ijk}\right| ^2 \approx 
+			\sum_{\xi \in \left[x, y, z\right]} max\left(D^{-\xi}_{ijk}, -D^{+\xi}_{ijk}, 0 \right)^2
+		\end{equation}
+		
+		\noindent into Eqn(\ref{eqn:discrete_eikonal_index_form}) to get
+		
+		\begin{equation}
+			\label{eqn:discrete_eikonal_approximation}
+			\sum_{\xi \in \left[x, y, z\right]} max\left(D^{-\xi}_{ijk}, -D^{+\xi}_{ijk}, 0 \right)^2 - \frac{1}{v^2_{ijk}} \approx 0
+		\end{equation}
+		
+		\noindent where $D^{-\xi}_{ijk}$ and $D^{+\xi}_{ijk}$ represent backward and forward finite-difference approximations to the derivative of $u_{ijk}$ along the $\xi$ axis, respectively.
+		\par
+		
+		Eqn (\ref{eqn:discrete_eikonal_approximation}) has an \textit{upwind} difference structure---a causality relationship implying that the value of $u_{ijk}$ is fully determined by neighbouring values of $u_{lmn}$ where $u_{lmn} < u_{ijk}$. The FMM leverages this upwind structure in the following update scheme (Algorithm \ref{alg:fmm_update}).
+		\par
+		
+		\begin{algorithm}
+			\SetAlgoLined
+			\ForEach{
+				\text{\normalfont Node in grid}
+			}{
+				Tag node as \textit{Far}\;
+			}
+			\ForEach{
+				$Node\ \in\ \Gamma\left(t=0\right)$
+			}{
+				Remove \textit{Far} tag from node\;
+				Add node to \textit{Close} list\;
+				$u_{ijk} \gets 0$\;
+			}
+			\While{
+				\text{\normalfont{length}}$(\textit{Close}) > 0$
+			}{
+				$Trial \gets\ $node in \textit{Close} with smallest value of $u$\;
+				Remove \textit{Trial} node from \textit{Close}\;
+				Tag \textit{Trial} node as \textit{Alive}\;
+				\ForEach{
+					\text{\normalfont Neighbour of} Trial
+				}{
+					\If{
+						\text{\normalfont Neighbour is} \textit{Far}
+					}{
+						Remove \textit{Far} tag from node\;
+						Add node to \textit{Close} list\;
+					}
+					Recompute value of $u$ for \textit{Neighbour} by solving Eqn (\ref{eqn:discrete_eikonal_approximation})\;
+				}
+			}
+			\caption{FMM update scheme for solving the Eikonal equation.}
+			\label{alg:fmm_update}
+		\end{algorithm}
 
-	Eqn (\ref{eqn:discrete_eikonal_approximation}) has an ``upwind'' difference structure: The value of $u_{ijk}$ is fully determined by $\left\{u_{lmn} \mid lmn \ne ijk \text{ and } u_{lmn} < u_{ijk}\right\}$. Imposing this upwind difference structure on the approximation to the gradient results in a loss of information: Once the propagating front crosses a grid node, it can not cross it again. An approximation to the gradient without an upwind difference structure could be chosen, but this choice allows for the solution to be built by iteratively solving Eqn (\ref{eqn:discrete_eikonal_approximation}) for $u_{ijk}$, if the initial shape of the propagating front is known---i.e., if $\left\{lmn \mid u_{lmn} = 0\right\}$ is known.
-	\par
-	
-	The efficiency of the FMM depends on at least one more observation: The value of $u$ potentially needs to be updated only at the grid nodes in a narrow band in front of the propagating front---i.e. the zero level set. This observation leads to the so-called ``narrow-band'' method
-	
-	\input{figures/grid_of_nodes_A.tex}
-	\input{figures/grid_of_nodes_B.tex}
+		\input{figures/fmm_update_scheme.tex}
+
+	\subsection{Order of the Finite-Difference Operators}
+		Thus far, we have not specified the explicit form of the finite-difference operators used. The simplest scheme employs only first-order operators:
+		
+		\begin{equation}
+			D^{-x}_{ijk} = D^{-x^1}_{ijk} \equiv \frac{u_{ijk}-u_{i-1jk}}{\Delta x},
+		\end{equation}
+		
+		\begin{equation}
+			D^{+x}_{ijk} = D^{+x^1}_{ijk} \equiv \frac{u_{i+1jk}-u_{ijk}}{\Delta x},
+		\end{equation}
+		
+		\noindent and similar definitions in $y$ and $z$. More accurate solutions, however, can be obtained by employing higher-order operators, e.g.,
+		\begin{equation}
+			D^{-x}_{ijk} = D^{-x^2}_{ijk} \equiv \frac{u_{i+2jk}-4u_{i+1jk}+3u_{ijk}}{2\Delta x},
+		\end{equation}
+		
+		\begin{equation}
+			D^{+x}_{ijk} = D^{+x^2}_{ijk} \equiv -\frac{u_{i-2jk}-4u_{i-1jk}+3u_{ijk}}{2\Delta x},
+		\end{equation}
+		and similar definitions in $y$ and $z$.
+		
+		Following \citeA{Sethian1999a} we compute values of $u_{ijk}$ using a second-order update when adequate upwind data exists.
