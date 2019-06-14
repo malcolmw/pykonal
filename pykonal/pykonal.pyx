@@ -329,15 +329,15 @@ class GridND(object):
             raise (TypeError(f'{self._class}.delta value must be <Iterable> type'))
         if len(value) != self._ndim:
             raise (ValueError(f'{self._class}.delta must have len() == {self._ndim}'))
-        self.iax_null = np.argwhere(value == 1).flatten()
         self._npts = np.array(value, dtype=DTYPE_INT)
+        self.iax_null = np.argwhere(self.npts == 1).flatten()
         self._update = True
 
 
     @property
     def min_coords(self):
         return (self._min_coords)
-    
+
     @min_coords.setter
     def min_coords(self, value):
         if not isinstance(value, collections.Iterable):
