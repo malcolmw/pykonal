@@ -1,5 +1,6 @@
 *.DS_Store
 jupyter/.ipynb_checkpoints
+doc/sphinx
 doc/latex/main.aux
 doc/latex/main.bbl
 doc/latex/main.blg
