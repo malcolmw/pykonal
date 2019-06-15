@@ -59,7 +59,7 @@ class EikonalSolver(object):
     @property
     def vv(self):
         return (self._vv)
-    
+
     @vv.setter
     def vv(self, value):
         if not np.all(value.shape == self.vgrid.npts):
@@ -68,85 +68,34 @@ class EikonalSolver(object):
 
 
     @property
-    def vv_p(self):
+    def vvp(self):
         cdef Py_ssize_t                ix, iy, iz
-        cdef np.ndarray[float, ndim=3] vv_p
+        cdef np.ndarray[float, ndim=3] vvp
 
-        if np.any(self.pgrid.min_coords < self.vgrid.min_coords) \
-                or np.any(self.pgrid.max_coords > self.vgrid.max_coords):
-            raise(OutOfBoundsError('Propagation grid extends beyond velocity grid boundaries. '\
-                                   'Please re-initialize the propagation grid to lie entirely '\
-                                   'within the velocity grid'))
-        vv_p  = np.zeros(self.pgrid.npts, dtype=DTYPE_FLOAT)
-        vi    = LinearInterpolator3D(self.vgrid, self.vv)
-        pgrid = self.pgrid[...]
-        for ix in range(self.pgrid.npts[0]):
-            for iy in range(self.pgrid.npts[1]):
-                for iz in range(self.pgrid.npts[2]):
-                    vv_p[ix, iy, iz] = vi(pgrid[ix, iy, iz])
-        return (vv_p)
-
-
-    @property
-    def vv_p_dep(self):
-        if np.any(self.pgrid.min_coords < self.vgrid.min_coords) \
-                or np.any(self.pgrid.max_coords > self.vgrid.max_coords):
-            raise(OutOfBoundsError('Propagation grid extends beyond velocity grid boundaries. '\
-                                   'Please re-initialize the propagation grid to lie entirely '\
-                                   'within the velocity grid'))
-        old_coords = np.meshgrid(
-            *[
-                np.linspace(
-                    self.vgrid.min_coords[iax], 
-                    self.vgrid.max_coords[iax], 
-                    self.vgrid.npts[iax]
-                ) 
-                for iax in range(self.ndim)
-            ],
-            indexing='ij'
-        )
-
-        new_coords = np.meshgrid(
-            *[
-                np.linspace(
-                    self.pgrid.min_coords[iax], 
-                    self.pgrid.max_coords[iax], 
-                    self.pgrid.npts[iax]
-                ) 
-                for iax in range(self.ndim)
-            ],
-            indexing='ij'
-        )
-
-        idx_start = [
-            (new_coords[iax].min() - old_coords[iax].min()) / self.vgrid.node_intervals[iax]
-            for iax in range(self.ndim)
-        ]
-        idx_end = [
-            (new_coords[iax].max() - old_coords[iax].min()) / self.vgrid.node_intervals[iax]
-            for iax in range(self.ndim)
-        ]
-        
-        idx_new = np.meshgrid(
-            *[
-                np.linspace(
-                    idx_start[iax], 
-                    idx_end[iax], 
-                    self.pgrid.npts[iax]
-                ) 
-                for iax in range(self.ndim)
-            ],
-            indexing='ij'
-        )
-        return(
-            scipy.ndimage.map_coordinates(
-                self.vv,
-                [idx_new[iax].flatten() for iax in range(self.ndim)],
-                output=DTYPE_FLOAT
-            ).reshape(
-                self.pgrid.npts
-            )
-        )
+        if not hasattr(self, '_vvp'):
+            if np.any(self.pgrid.min_coords < self.vgrid.min_coords) \
+                    or np.any(self.pgrid.max_coords > self.vgrid.max_coords):
+                raise(
+                    OutOfBoundsError(
+                        'Propagation grid extends beyond velocity grid '
+                        'boundaries. Please re-initialize the propagation grid '
+                        'to lie entirely within the velocity grid'
+                    )
+                )
+            vvp  = np.zeros(self.pgrid.npts, dtype=DTYPE_FLOAT)
+            vi    = LinearInterpolator3D(self.vgrid, self.vv)
+            pgrid = self.pgrid[...]
+            for ix in range(self.pgrid.npts[0]):
+                for iy in range(self.pgrid.npts[1]):
+                    for iz in range(self.pgrid.npts[2]):
+                        vvp[ix, iy, iz] = vi(pgrid[ix, iy, iz])
+            if np.any(np.isnan(vvp))\
+                    or np.any(np.isinf(vvp))\
+                    or np.any(vvp == 0)\
+            :
+                raise (ValueError('Velocity model corrupted on interpolationg.'))
+            self._vvp = vvp
+        return (self._vvp)
 
 
     @property
@@ -164,24 +113,33 @@ class EikonalSolver(object):
 
     def add_source(self, src, t0=0):
         self._sources.append((src, t0))
-    
+
 
     @property
     def sources(self):
         sources = []
         for src, t0 in self._sources:
             for iax in range(self.ndim):
-                if self.pgrid.min_coords[iax] > src[iax] or self.pgrid.max_coords[iax] < src[iax]:
-                    raise (ValueError('Source location lies outside of propagation grid'))
-            idx00 = (np.asarray(src) - self.pgrid.min_coords) / self.pgrid.node_intervals
+                if self.pgrid.min_coords[iax] > src[iax] \
+                        or self.pgrid.max_coords[iax] < src[iax]:
+                    raise (
+                        ValueError(
+                            'Source location lies outside of propagation grid'
+                        )
+                    )
+            idx00 = (np.asarray(src) - self.pgrid.min_coords) \
+                  / self.pgrid.node_intervals
             idx0 = idx00.astype(DTYPE_INT)
             mod = np.argwhere(np.mod(idx00, 1) != 0).flatten()
             idxs = []
-            for delta in itertools.product(*[[0, 1] if idx in mod else [0] for idx in range(self.ndim)]):
+            for delta in itertools.product(
+                    *[[0, 1] if idx in mod else [0] for idx in range(self.ndim)]
+            ):
                 idxs.append(idx0 + np.array(delta))
             for idx in idxs:
                 idx = tuple(idx)
-                t = t0 + np.sqrt(np.sum(np.square(self.pgrid[idx] - src))) / self.vv_p[idx]
+                t = t0 + np.sqrt(np.sum(np.square(self.pgrid[idx] - src)))\
+                    / self.vvp[idx]
                 sources.append((idx, t))
         return (sources)
 
@@ -200,10 +158,13 @@ class EikonalSolver(object):
         is_alive = np.full(shape, fill_value=False, dtype=np.bool)
         is_far   = np.full(shape, fill_value=True, dtype=np.bool)
 
+        if hasattr(self, '_vvp'):
+            del(self._vvp)
+
         init_sources(self.sources, uu, close, is_far)
         self.denominator_errors, self.determinant_errors = update(
             uu,
-            self.vv_p,
+            self.vvp,
             is_alive,
             close,
             is_far,
@@ -212,6 +173,7 @@ class EikonalSolver(object):
 
         self._uu = np.array(uu)
         self._solved = True
+        del(self._vvp)
 
 
     def trace_ray(self, *args, method='euler', tolerance=1e-2):
@@ -387,7 +349,7 @@ cdef class LinearInterpolator3D(object):
     cdef float[:,:,:]   _values
     cdef float[:]       _node_intervals
     cdef Py_ssize_t[3]  _max_idx
-    cdef bint[3]        _iax_isnull  
+    cdef bint[3]        _iax_isnull
 
     def __init__(self, grid, values):
         self._grid           = grid[...]
@@ -411,15 +373,20 @@ cdef class LinearInterpolator3D(object):
 
         for iax in range(3):
             idx[iax] = point[iax] / self._node_intervals[iax]
-            if (idx[iax] < 0 and self._iax_isnull[iax] == 0) or idx[iax] > self._max_idx[iax]:
-                raise(OutOfBoundsError('Point outside of interpolation domain requested'))
+            if (idx[iax] < 0 and self._iax_isnull[iax] == 0) \
+                    or idx[iax] > self._max_idx[iax]:
+                raise(
+                    OutOfBoundsError(
+                        'Point outside of interpolation domain requested'
+                    )
+                )
             delta[iax] = (idx[iax] % 1.) * self._node_intervals[iax]
         ix = <Py_ssize_t> idx[0]
         iy = <Py_ssize_t> idx[1]
         iz = <Py_ssize_t> idx[2]
-        dix = 0 if self._iax_isnull[0] == 1 else 1
-        diy = 0 if self._iax_isnull[1] == 1 else 1
-        diz = 0 if self._iax_isnull[2] == 1 else 1
+        dix = 0 if self._iax_isnull[0] == 1 or ix == self._max_idx[0] else 1
+        diy = 0 if self._iax_isnull[1] == 1 or iy == self._max_idx[1] else 1
+        diz = 0 if self._iax_isnull[2] == 1 or iz == self._max_idx[2] else 1
         f000 = self._values[ix,     iy,     iz]
         f100 = self._values[ix+dix, iy,     iz]
         f110 = self._values[ix+dix, iy+diy, iz]
