@@ -289,7 +289,7 @@ class GridND(object):
     def npts(self, value):
         if not isinstance(value, collections.Iterable):
             raise (TypeError(f'{self._class}.delta value must be <Iterable> type'))
-        if len(value) != self._ndim:
+        if len(value) != self.ndim:
             raise (ValueError(f'{self._class}.delta must have len() == {self._ndim}'))
         self._npts = np.array(value, dtype=DTYPE_INT)
         self.iax_null = np.argwhere(self.npts == 1).flatten()
@@ -348,6 +348,8 @@ cdef class LinearInterpolator3D(object):
     cdef float[:,:,:,:] _grid
     cdef float[:,:,:]   _values
     cdef float[:]       _node_intervals
+    cdef float[3]       _min_coords
+    cdef float[3]       _max_coords
     cdef Py_ssize_t[3]  _max_idx
     cdef bint[3]        _iax_isnull
 
@@ -356,6 +358,8 @@ cdef class LinearInterpolator3D(object):
         self._values         = values
         self._node_intervals = grid.node_intervals
         self._max_idx        = grid.npts - 1
+        self._min_coords     = grid.min_coords
+        self._max_coords     = grid.max_coords
         self._iax_isnull     = [True if iax in grid.iax_null else False for iax in range(grid.ndim)]
 
 
@@ -372,14 +376,13 @@ cdef class LinearInterpolator3D(object):
         cdef Py_ssize_t      ix, iy, iz, iax, dix, diy, diz
 
         for iax in range(3):
-            idx[iax] = point[iax] / self._node_intervals[iax]
-            if (idx[iax] < 0 and self._iax_isnull[iax] == 0) \
-                    or idx[iax] > self._max_idx[iax]:
+            if point[iax] < self._min_coords[iax] or point[iax] > self._max_coords[iax]:
                 raise(
                     OutOfBoundsError(
                         'Point outside of interpolation domain requested'
                     )
                 )
+            idx[iax] = (point[iax] - self._min_coords[iax]) / self._node_intervals[iax]
             delta[iax] = (idx[iax] % 1.) * self._node_intervals[iax]
         ix = <Py_ssize_t> idx[0]
         iy = <Py_ssize_t> idx[1]
