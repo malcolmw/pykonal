@@ -200,11 +200,6 @@ class EikonalSolver(object):
                 for iax in range(self.ndim) if iax not in self.iax_null
             ]
         )
-        # Create a flat array of coordinates
-#         coords = self.pgrid[...].reshape(
-#             np.prod(self.pgrid.npts),
-#             self._ndim
-#         )
         # Create an interpolator for the gradient field
         gg = np.moveaxis(
             np.stack(
@@ -367,7 +362,7 @@ cdef class LinearInterpolator3D(object):
         return (self.interpolate(np.array(point, dtype=DTYPE_FLOAT)))
 
 
-    cpdef float interpolate(self, float[:] point):
+    cpdef float interpolate(self, float[:] point) except? -9e9:
         cdef float           f000, f100, f110, f101, f111, f010, f011, f001
         cdef float           f00, f10, f01, f11
         cdef float           f0, f1
@@ -379,7 +374,7 @@ cdef class LinearInterpolator3D(object):
             if point[iax] < self._min_coords[iax] or point[iax] > self._max_coords[iax]:
                 raise(
                     OutOfBoundsError(
-                        'Point outside of interpolation domain requested'
+                        f'Point outside of interpolation domain requested: ({point[0]}, {point[1]}, {point[2]})'
                     )
                 )
             idx[iax] = (point[iax] - self._min_coords[iax]) / self._node_intervals[iax]
