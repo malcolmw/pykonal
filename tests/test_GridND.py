@@ -10,7 +10,7 @@ def random_grid():
        * np.sign(np.random.randint(-1, 1, 3))\
        * np.random.rand(grid.ndim)
     grid.node_intervals  = np.random.rand(3) * 100
-    grid.npts            = np.random.randint(1, 1000, 3)
+    grid.npts            = np.random.randint(1, 100, 3)
     return (grid)
 
 
