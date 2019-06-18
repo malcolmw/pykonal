@@ -172,8 +172,8 @@ class EikonalSolver(object):
             is_far,
             self.pgrid.node_intervals
         )
-
-        self._uu = np.array(uu)
+        self._uu = np.asarray(uu)
+        self._uu[self._uu == MAX_REAL] = np.inf
         self._solved = True
         del(self._vvp)
 
