@@ -12,13 +12,16 @@ from libcpp.vector cimport vector as cpp_vector
 from libc.stdlib cimport malloc, free
 
 # Define the level of computational precision.
-# If these are changed, all appearance of 'float' and 'int' in the code
-# below will need to updated appropriately.
-DTYPE_FLOAT = np.float32
-DTYPE_INT   = np.int32
+ctypedef np.float32_t _REAL_t
+ctypedef np.uint16_t  _UINT_t
+DTYPE_REAL = np.float32
+DTYPE_UINT = np.uint16
+
+DEF _ERROR_REAL = -999999999999.
+ERROR_REAL      = DTYPE_REAL(_ERROR_REAL)
 
 # Define a floating point value to represent infinity.
-cdef float MAX_FLOAT = np.finfo(DTYPE_FLOAT).max
+cdef _REAL_t MAX_REAL = np.finfo(DTYPE_REAL).max
 
 # A simple structure to hold 3D array indices.
 cdef struct Index3D:
@@ -70,7 +73,7 @@ class EikonalSolver(object):
     @property
     def vvp(self):
         cdef Py_ssize_t                ix, iy, iz
-        cdef np.ndarray[float, ndim=3] vvp
+        cdef np.ndarray[_REAL_t, ndim=3] vvp
 
         if not hasattr(self, '_vvp'):
             if np.any(self.pgrid.min_coords < self.vgrid.min_coords) \
@@ -82,7 +85,7 @@ class EikonalSolver(object):
                         'to lie entirely within the velocity grid'
                     )
                 )
-            vvp  = np.zeros(self.pgrid.npts, dtype=DTYPE_FLOAT)
+            vvp  = np.zeros(self.pgrid.npts, dtype=DTYPE_REAL)
             vi    = LinearInterpolator3D(self.vgrid, self.vv)
             pgrid = self.pgrid[...]
             for ix in range(self.pgrid.npts[0]):
@@ -129,7 +132,7 @@ class EikonalSolver(object):
                     )
             idx00 = (np.asarray(src) - self.pgrid.min_coords) \
                   / self.pgrid.node_intervals
-            idx0 = idx00.astype(DTYPE_INT)
+            idx0 = idx00.astype(DTYPE_UINT)
             mod = np.argwhere(np.mod(idx00, 1) != 0).flatten()
             idxs = []
             for delta in itertools.product(
@@ -150,11 +153,11 @@ class EikonalSolver(object):
 
     def solve(self):
         cdef cpp_vector[Index3D] close
-        cdef float[:,:,:] uu
+        cdef _REAL_t[:,:,:] uu
         cdef np.ndarray[np.npy_bool, ndim=3, cast=True] is_alive, is_far
 
         shape = self.pgrid.npts
-        uu       = np.full(shape, fill_value=MAX_FLOAT, dtype=DTYPE_FLOAT)
+        uu       = np.full(shape, fill_value=MAX_REAL, dtype=DTYPE_REAL)
         is_alive = np.full(shape, fill_value=False, dtype=np.bool)
         is_far   = np.full(shape, fill_value=True, dtype=np.bool)
 
@@ -184,14 +187,14 @@ class EikonalSolver(object):
 
 
     def _trace_ray_euler(self, start, tolerance=1e-2):
-        cdef cpp_vector[float *]       ray
-        cdef float                     step_size
-        cdef float                     *point_new
-        cdef float[3]                  point_last
+        cdef cpp_vector[_REAL_t *]       ray
+        cdef _REAL_t                     step_size
+        cdef _REAL_t                     *point_new
+        cdef _REAL_t[3]                  point_last
         cdef Py_ssize_t                i
-        cdef np.ndarray[float, ndim=2] ray_np
+        cdef np.ndarray[_REAL_t, ndim=2] ray_np
 
-        point_new = <float *> malloc(3 * sizeof(float))
+        point_new = <_REAL_t *> malloc(3 * sizeof(_REAL_t))
         point_new[0], point_new[1], point_new[2] = start
         ray.push_back(point_new)
         step_size = np.min(
@@ -220,20 +223,20 @@ class EikonalSolver(object):
         )
         for iax in self.iax_null:
             gg = np.insert(gg, iax, np.zeros(self.pgrid.npts), axis=-1)
-        grad_x = LinearInterpolator3D(self.pgrid, gg[...,0].astype(DTYPE_FLOAT))
-        grad_y = LinearInterpolator3D(self.pgrid, gg[...,1].astype(DTYPE_FLOAT))
-        grad_z = LinearInterpolator3D(self.pgrid, gg[...,2].astype(DTYPE_FLOAT))
+        grad_x = LinearInterpolator3D(self.pgrid, gg[...,0].astype(DTYPE_REAL))
+        grad_y = LinearInterpolator3D(self.pgrid, gg[...,1].astype(DTYPE_REAL))
+        grad_z = LinearInterpolator3D(self.pgrid, gg[...,2].astype(DTYPE_REAL))
         # Create an interpolator for the travel-time field
         uu = LinearInterpolator3D(self.pgrid, self.uu)
         point_last   = ray.back()
         while uu.interpolate(point_last) > tolerance:
-            point_new = <float *> malloc(3 * sizeof(float))
+            point_new = <_REAL_t *> malloc(3 * sizeof(_REAL_t))
             point_new[0] = point_last[0] - step_size * grad_x.interpolate(point_last)
             point_new[1] = point_last[1] - step_size * grad_y.interpolate(point_last)
             point_new[2] = point_last[2] - step_size * grad_z.interpolate(point_last)
             ray.push_back(point_new)
             point_last   = ray.back()
-        ray_np = np.zeros((ray.size(), 3), dtype=DTYPE_FLOAT)
+        ray_np = np.zeros((ray.size(), 3), dtype=DTYPE_REAL)
         for i in range(ray.size()):
             ray_np[i, 0] = ray[i][0]
             ray_np[i, 1] = ray[i][1]
@@ -272,7 +275,7 @@ class GridND(object):
             raise (TypeError(f'{self._class}.node_intervals value must be <Iterable> type'))
         if len(value) != self._ndim:
             raise (ValueError(f'{self._class}.node_intervals must have len() == {self._ndim}'))
-        self._node_intervals = np.array(value, dtype=DTYPE_FLOAT)
+        self._node_intervals = np.array(value, dtype=DTYPE_REAL)
         self._update = True
 
 
@@ -286,7 +289,7 @@ class GridND(object):
             raise (TypeError(f'{self._class}.delta value must be <Iterable> type'))
         if len(value) != self.ndim:
             raise (ValueError(f'{self._class}.delta must have len() == {self._ndim}'))
-        self._npts = np.array(value, dtype=DTYPE_INT)
+        self._npts = np.array(value, dtype=DTYPE_UINT)
         self.iax_null = np.argwhere(self.npts == 1).flatten()
         self._update = True
 
@@ -301,7 +304,7 @@ class GridND(object):
             raise (TypeError(f'{self._class}.min_coords value must be <Iterable> type'))
         if len(value) != self._ndim:
             raise (ValueError(f'{self._class}.min_coords must have len() == {self._ndim}'))
-        self._min_coords = np.array(value, dtype=DTYPE_FLOAT)
+        self._min_coords = np.array(value, dtype=DTYPE_REAL)
         self._update = True
 
 
@@ -310,7 +313,7 @@ class GridND(object):
         for attr in ('_node_intervals', '_npts', '_min_coords'):
             if not hasattr(self, attr):
                 raise (AttributeError(f'{self._class}.{attr.lstrip("_")} not initialized'))
-        return ((self.min_coords + self.node_intervals * (self.npts - 1)).astype(DTYPE_FLOAT))
+        return ((self.min_coords + self.node_intervals * (self.npts - 1)).astype(DTYPE_REAL))
 
 
     @property
@@ -330,7 +333,7 @@ class GridND(object):
                 ], 
                 indexing='ij'
             )
-            self._mesh = np.moveaxis(np.stack(mesh), 0, -1).astype(DTYPE_FLOAT)
+            self._mesh = np.moveaxis(np.stack(mesh), 0, -1).astype(DTYPE_REAL)
             self._update = False
         return (self._mesh)
 
@@ -340,11 +343,11 @@ class GridND(object):
 
 
 cdef class LinearInterpolator3D(object):
-    cdef float[:,:,:,:] _grid
-    cdef float[:,:,:]   _values
-    cdef float[:]       _node_intervals
-    cdef float[3]       _min_coords
-    cdef float[3]       _max_coords
+    cdef _REAL_t[:,:,:,:] _grid
+    cdef _REAL_t[:,:,:]   _values
+    cdef _REAL_t[:]       _node_intervals
+    cdef _REAL_t[3]       _min_coords
+    cdef _REAL_t[3]       _max_coords
     cdef Py_ssize_t[3]  _max_idx
     cdef bint[3]        _iax_isnull
 
@@ -359,15 +362,15 @@ cdef class LinearInterpolator3D(object):
 
 
     def __call__(self, point):
-        return (self.interpolate(np.array(point, dtype=DTYPE_FLOAT)))
+        return (self.interpolate(np.array(point, dtype=DTYPE_REAL)))
 
 
-    cpdef float interpolate(self, float[:] point) except? -9e9:
-        cdef float           f000, f100, f110, f101, f111, f010, f011, f001
-        cdef float           f00, f10, f01, f11
-        cdef float           f0, f1
-        cdef float           f
-        cdef float[3]        delta, idx
+    cpdef _REAL_t interpolate(self, _REAL_t[:] point) except? _ERROR_REAL:
+        cdef _REAL_t           f000, f100, f110, f101, f111, f010, f011, f001
+        cdef _REAL_t           f00, f10, f01, f11
+        cdef _REAL_t           f0, f1
+        cdef _REAL_t           f
+        cdef _REAL_t[3]        delta, idx
         cdef Py_ssize_t      ix, iy, iz, iax, dix, diy, diz
 
         for iax in range(3):
@@ -403,7 +406,7 @@ cdef class LinearInterpolator3D(object):
         return (f)
 
 
-cdef Index3D heap_pop(cpp_vector[Index3D]& idxs, float[:,:,:] uu):
+cdef Index3D heap_pop(cpp_vector[Index3D]& idxs, _REAL_t[:,:,:] uu):
     '''Pop the smallest item off the heap, maintaining the heap invariant.'''
     cdef Index3D last, idx_return
 
@@ -417,7 +420,7 @@ cdef Index3D heap_pop(cpp_vector[Index3D]& idxs, float[:,:,:] uu):
     return (last)
 
 
-cdef void heap_push(cpp_vector[Index3D]& idxs, float[:,:,:] uu, Index3D idx):
+cdef void heap_push(cpp_vector[Index3D]& idxs, _REAL_t[:,:,:] uu, Index3D idx):
     '''Push item onto heap, maintaining the heap invariant.'''
     idxs.push_back(idx)
     sift_down(idxs, uu, 0, idxs.size()-1)
@@ -425,7 +428,7 @@ cdef void heap_push(cpp_vector[Index3D]& idxs, float[:,:,:] uu, Index3D idx):
 
 cdef void init_sources(
     list sources,
-    float[:,:,:] uu, 
+    _REAL_t[:,:,:] uu, 
     cpp_vector[Index3D]& close, 
     np.ndarray[np.npy_bool, ndim=3, cast=True] is_far
 ):
@@ -438,7 +441,7 @@ cdef void init_sources(
         heap_push(close, uu, idx)
 
 
-cdef void sift_down(cpp_vector[Index3D]& idxs, float[:,:,:] uu, Py_ssize_t j_start, Py_ssize_t j):
+cdef void sift_down(cpp_vector[Index3D]& idxs, _REAL_t[:,:,:] uu, Py_ssize_t j_start, Py_ssize_t j):
     '''Doc string'''
     cdef Py_ssize_t j_parent
     cdef Index3D idx_new, idx_parent
@@ -457,7 +460,7 @@ cdef void sift_down(cpp_vector[Index3D]& idxs, float[:,:,:] uu, Py_ssize_t j_sta
     idxs[j] = idx_new
 
 
-cdef void sift_up(cpp_vector[Index3D]& idxs, float[:,:,:] uu, Py_ssize_t j_start):
+cdef void sift_up(cpp_vector[Index3D]& idxs, _REAL_t[:,:,:] uu, Py_ssize_t j_start):
     '''Doc string'''
     cdef Py_ssize_t j, j_child, j_end, j_right
     cdef Index3D idx_child, idx_right, idx_new
@@ -496,12 +499,12 @@ cdef bint stencil(
 
 
 cdef tuple update(
-        float[:,:,:] uu,
-        float[:,:,:] vv,
+        _REAL_t[:,:,:] uu,
+        _REAL_t[:,:,:] vv,
         np.ndarray[np.npy_bool, ndim=3, cast=True] is_alive,
         cpp_vector[Index3D] close,
         np.ndarray[np.npy_bool, ndim=3, cast=True] is_far,
-        float[:] dd
+        _REAL_t[:] dd
 ):
     '''The update algorithm to propagate the wavefront.'''
     cdef Py_ssize_t       i, iax, idrxn, trial_ix, trial_iy, trial_iz
@@ -512,9 +515,9 @@ cdef tuple update(
     cdef int              count_a = 0
     cdef int              count_b = 0
     cdef int[2]           order
-    cdef float            a, b, c, bfd, ffd
-    cdef float[2]         fdu
-    cdef float[3]         aa, bb, cc, dd2
+    cdef _REAL_t            a, b, c, bfd, ffd
+    cdef _REAL_t[2]         fdu
+    cdef _REAL_t[3]         aa, bb, cc, dd2
 
     max_idx       = [is_alive.shape[0], is_alive.shape[1], is_alive.shape[2]]
     dx, dy, dz    = dd
