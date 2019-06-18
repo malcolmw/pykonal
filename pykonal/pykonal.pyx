@@ -67,7 +67,7 @@ class EikonalSolver(object):
     def vv(self, value):
         if not np.all(value.shape == self.vgrid.npts):
             raise (ValueError('SHAPE ERROR!'))
-        self._vv = value
+        self._vv = value.astype(DTYPE_REAL)
 
 
     @property
