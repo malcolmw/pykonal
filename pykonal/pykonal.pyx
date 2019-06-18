@@ -94,7 +94,6 @@ class EikonalSolver(object):
                         vvp[ix, iy, iz] = vi(pgrid[ix, iy, iz])
             if np.any(np.isnan(vvp))\
                     or np.any(np.isinf(vvp))\
-                    or np.any(vvp == 0)\
             :
                 raise (ValueError('Velocity model corrupted on interpolationg.'))
             self._vvp = vvp
@@ -560,144 +559,145 @@ cdef tuple update(
                 continue
             # Recompute the values of u at all Close neighbours of Trial
             # by solving the piecewise quadratic equation.
-            for iax in range(3):
-                switch = [0, 0, 0]
-                idrxn = 0
-                for idrxn in range(2):
-                    switch[iax] = drxns[idrxn]
-                    if (
-                               (drxns[idrxn] == -1 and nbr[iax] > 1)
-                            or (drxns[idrxn] == 1 and nbr[iax] < max_idx[iax] - 2)
-                    )\
-                            and is_alive[
+            if vv[nbr[0], nbr[1], nbr[2]] > 0:
+                for iax in range(3):
+                    switch = [0, 0, 0]
+                    idrxn = 0
+                    for idrxn in range(2):
+                        switch[iax] = drxns[idrxn]
+                        if (
+                                   (drxns[idrxn] == -1 and nbr[iax] > 1)
+                                or (drxns[idrxn] == 1 and nbr[iax] < max_idx[iax] - 2)
+                        )\
+                                and is_alive[
+                                    nbr[0]+2*switch[0],
+                                    nbr[1]+2*switch[1],
+                                    nbr[2]+2*switch[2]
+                                ]\
+                                and is_alive[
+                                    nbr[0]+switch[0],
+                                    nbr[1]+switch[1],
+                                    nbr[2]+switch[2]
+                                ]\
+                                and uu[
+                                    nbr[0]+2*switch[0],
+                                    nbr[1]+2*switch[1],
+                                    nbr[2]+2*switch[2]
+                                ] <= uu[
+                                    nbr[0]+switch[0],
+                                    nbr[1]+switch[1],
+                                    nbr[2]+switch[2]
+                                ]\
+                        :
+                            order[idrxn] = 2
+                            fdu[idrxn]  = drxns[idrxn] * (
+                              - 3 * uu[
+                                  nbr[0],
+                                  nbr[1],
+                                  nbr[2]
+                              ]\
+                              + 4 * uu[
+                                  nbr[0]+switch[0],
+                                  nbr[1]+switch[1],
+                                  nbr[2]+switch[2]
+                              ]\
+                              -     uu[
+                                  nbr[0]+2*switch[0],
+                                  nbr[1]+2*switch[1],
+                                  nbr[2]+2*switch[2]
+                              ]
+                            ) / (2 * dd[iax])
+                        elif (
+                                   (drxns[idrxn] == -1 and nbr[iax] > 0)
+                                or (drxns[idrxn] ==  1 and nbr[iax] < max_idx[iax] - 1)
+                        )\
+                                and is_alive[
+                                    nbr[0]+switch[0],
+                                    nbr[1]+switch[1],
+                                    nbr[2]+switch[2]
+                                ]\
+                        :
+                            order[idrxn] = 1
+                            fdu[idrxn] = drxns[idrxn] * (
+                                uu[
+                                    nbr[0]+switch[0],
+                                    nbr[1]+switch[1],
+                                    nbr[2]+switch[2]
+                                ]
+                              - uu[nbr[0], nbr[1], nbr[2]]
+                            ) / dd[iax]
+                        else:
+                            order[idrxn], fdu[idrxn] = 0, 0
+                    if fdu[0] > -fdu[1]:
+                        # Do the update using the backward operator
+                        idrxn, switch[iax] = 0, -1
+                    else:
+                        # Do the update using the forward operator
+                        idrxn, switch[iax] = 1, 1
+                    if order[idrxn] == 2:
+                        aa[iax] = 9 / (4 * dd2[iax])
+                        bb[iax] = (
+                            6 * uu[
                                 nbr[0]+2*switch[0],
                                 nbr[1]+2*switch[1],
                                 nbr[2]+2*switch[2]
-                            ]\
-                            and is_alive[
-                                nbr[0]+switch[0],
-                                nbr[1]+switch[1],
-                                nbr[2]+switch[2]
-                            ]\
-                            and uu[
-                                nbr[0]+2*switch[0],
-                                nbr[1]+2*switch[1],
-                                nbr[2]+2*switch[2]
-                            ] <= uu[
-                                nbr[0]+switch[0],
-                                nbr[1]+switch[1],
-                                nbr[2]+switch[2]
-                            ]\
-                    :
-                        order[idrxn] = 2
-                        fdu[idrxn]  = drxns[idrxn] * (
-                          - 3 * uu[
-                              nbr[0],
-                              nbr[1],
-                              nbr[2]
-                          ]\
-                          + 4 * uu[
-                              nbr[0]+switch[0],
-                              nbr[1]+switch[1],
-                              nbr[2]+switch[2]
-                          ]\
-                          -     uu[
-                              nbr[0]+2*switch[0],
-                              nbr[1]+2*switch[1],
-                              nbr[2]+2*switch[2]
-                          ]
-                        ) / (2 * dd[iax])
-                    elif (
-                               (drxns[idrxn] == -1 and nbr[iax] > 0)
-                            or (drxns[idrxn] ==  1 and nbr[iax] < max_idx[iax] - 1)
-                    )\
-                            and is_alive[
-                                nbr[0]+switch[0],
-                                nbr[1]+switch[1],
-                                nbr[2]+switch[2]
-                            ]\
-                    :
-                        order[idrxn] = 1
-                        fdu[idrxn] = drxns[idrxn] * (
-                            uu[
+                            ]
+                         - 24 * uu[
                                 nbr[0]+switch[0],
                                 nbr[1]+switch[1],
                                 nbr[2]+switch[2]
                             ]
-                          - uu[nbr[0], nbr[1], nbr[2]]
-                        ) / dd[iax]
-                    else:
-                        order[idrxn], fdu[idrxn] = 0, 0
-                if fdu[0] > -fdu[1]:
-                    # Do the update using the backward operator
-                    idrxn, switch[iax] = 0, -1
+                        ) / (4 * dd2[iax])
+                        cc[iax] = (
+                            uu[
+                                nbr[0]+2*switch[0],
+                                nbr[1]+2*switch[1],
+                                nbr[2]+2*switch[2]
+                            ]**2 \
+                            - 8 * uu[
+                                nbr[0]+2*switch[0],
+                                nbr[1]+2*switch[1],
+                                nbr[2]+2*switch[2]
+                            ] * uu[
+                                nbr[0]+switch[0],
+                                nbr[1]+switch[1],
+                                nbr[2]+switch[2]
+                            ]
+                            + 16 * uu[
+                                nbr[0]+switch[0],
+                                nbr[1]+switch[1],
+                                nbr[2]+switch[2]
+                            ]**2
+                        ) / (4 * dd2[iax])
+                    elif order[idrxn] == 1:
+                        aa[iax] = 1 / dd2[iax]
+                        bb[iax] = -2 * uu[
+                            nbr[0]+switch[0],
+                            nbr[1]+switch[1],
+                            nbr[2]+switch[2]
+                        ] / dd2[iax]
+                        cc[iax] = uu[
+                            nbr[0]+switch[0],
+                            nbr[1]+switch[1],
+                            nbr[2]+switch[2]
+                        ]**2 / dd2[iax]
+                    elif order[idrxn] == 0:
+                        aa[iax], bb[iax], cc[iax] = 0, 0, 0
+                a = aa[0] + aa[1] + aa[2]
+                if a == 0:
+                    count_a += 1
+                    continue
+                b = bb[0] + bb[1] + bb[2]
+                c = cc[0] + cc[1] + cc[2] - 1/vv[nbr[0], nbr[1], nbr[2]]**2
+                if b ** 2 < 4 * a * c:
+                    if -b / (2 * a) < uu[nbr[0], nbr[1], nbr[2]]:
+                        # This may not be mathematically permissible
+                        uu[nbr[0], nbr[1], nbr[2]] = -b / (2 * a)
+                    count_b += 1
                 else:
-                    # Do the update using the forward operator
-                    idrxn, switch[iax] = 1, 1
-                if order[idrxn] == 2:
-                    aa[iax] = 9 / (4 * dd2[iax])
-                    bb[iax] = (
-                        6 * uu[
-                            nbr[0]+2*switch[0],
-                            nbr[1]+2*switch[1],
-                            nbr[2]+2*switch[2]
-                        ]
-                     - 24 * uu[
-                            nbr[0]+switch[0],
-                            nbr[1]+switch[1],
-                            nbr[2]+switch[2]
-                        ]
-                    ) / (4 * dd2[iax])
-                    cc[iax] = (
-                        uu[
-                            nbr[0]+2*switch[0],
-                            nbr[1]+2*switch[1],
-                            nbr[2]+2*switch[2]
-                        ]**2 \
-                        - 8 * uu[
-                            nbr[0]+2*switch[0],
-                            nbr[1]+2*switch[1],
-                            nbr[2]+2*switch[2]
-                        ] * uu[
-                            nbr[0]+switch[0],
-                            nbr[1]+switch[1],
-                            nbr[2]+switch[2]
-                        ]
-                        + 16 * uu[
-                            nbr[0]+switch[0],
-                            nbr[1]+switch[1],
-                            nbr[2]+switch[2]
-                        ]**2
-                    ) / (4 * dd2[iax])
-                elif order[idrxn] == 1:
-                    aa[iax] = 1 / dd2[iax]
-                    bb[iax] = -2 * uu[
-                        nbr[0]+switch[0],
-                        nbr[1]+switch[1],
-                        nbr[2]+switch[2]
-                    ] / dd2[iax]
-                    cc[iax] = uu[
-                        nbr[0]+switch[0],
-                        nbr[1]+switch[1],
-                        nbr[2]+switch[2]
-                    ]**2 / dd2[iax]
-                elif order[idrxn] == 0:
-                    aa[iax], bb[iax], cc[iax] = 0, 0, 0
-            a = aa[0] + aa[1] + aa[2]
-            if a == 0:
-                count_a += 1
-                continue
-            b = bb[0] + bb[1] + bb[2]
-            c = cc[0] + cc[1] + cc[2] - 1/vv[nbr[0], nbr[1], nbr[2]]**2
-            if b ** 2 < 4 * a * c:
-                if -b / (2 * a) < uu[nbr[0], nbr[1], nbr[2]]:
-                    # This may not be mathematically permissible
-                    uu[nbr[0], nbr[1], nbr[2]] = -b / (2 * a)
-                count_b += 1
-            else:
-                uu[nbr[0], nbr[1], nbr[2]] = (
-                    -b + libc.math.sqrt(b ** 2 - 4 * a * c)
-                ) / (2 * a)
+                    uu[nbr[0], nbr[1], nbr[2]] = (
+                        -b + libc.math.sqrt(b ** 2 - 4 * a * c)
+                    ) / (2 * a)
             # Tag as Close all neighbours of Trial that are not Alive
             # If the neighbour is in Far, remove it from that list and add it to
             # Close
