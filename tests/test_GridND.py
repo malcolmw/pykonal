@@ -51,13 +51,13 @@ class GridNDTestCase(unittest.TestCase):
     def test_min_coords(self):
         for i in range(10):
             grid = random_grid()
-            self.assertEqual(grid.min_coords.dtype, pykonal.DTYPE_FLOAT)
+            self.assertEqual(grid.min_coords.dtype, pykonal.DTYPE_REAL)
 
 
     def test_max_coords(self):
         for i in range(10):
             grid = random_grid()
-            self.assertEqual(grid.max_coords.dtype, pykonal.DTYPE_FLOAT)
+            self.assertEqual(grid.max_coords.dtype, pykonal.DTYPE_REAL)
             self.assertTrue(
                 np.all(grid.max_coords >= grid.min_coords)
             )
@@ -66,7 +66,7 @@ class GridNDTestCase(unittest.TestCase):
     def test_node_intervals(self):
         for i in range(10):
             grid = random_grid()
-            self.assertEqual(grid.node_intervals.dtype, pykonal.DTYPE_FLOAT)
+            self.assertEqual(grid.node_intervals.dtype, pykonal.DTYPE_REAL)
 
     def test_npts(self):
         for i in range(10):
@@ -75,7 +75,7 @@ class GridNDTestCase(unittest.TestCase):
                 grid.npts = grid.npts[0]
             with self.assertRaises(ValueError):
                 grid.npts = grid.npts[:2]
-            self.assertEqual(grid.npts.dtype, pykonal.DTYPE_INT)
+            self.assertEqual(grid.npts.dtype, pykonal.DTYPE_UINT)
 
 
 if __name__ == '__main__':

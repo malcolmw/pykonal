@@ -4,8 +4,6 @@ import pykonal
 import unittest
 
 
-ERR_FLOAT = np.float32(-9e9)
-
 def random_grid():
     grid                 = pykonal.GridND(ndim=3)
     grid.min_coords      = 100 \
@@ -16,7 +14,7 @@ def random_grid():
 
     while True:
         vv   = np.random.randint(1, 1e4) * np.random.rand(*grid.npts)
-        vv   = vv.astype(pykonal.DTYPE_FLOAT)
+        vv   = vv.astype(pykonal.DTYPE_REAL)
         if vv.min() > 0:
             break
     return (grid, vv)
@@ -41,7 +39,7 @@ class LinearInterpolator3DTestCase(unittest.TestCase):
             delta = grid.max_coords - grid.min_coords
             ii = pykonal.LinearInterpolator3D(grid, vv)
             for j in range(10):
-                xyz = (grid.min_coords + np.random.rand(3) * delta).astype(pykonal.DTYPE_FLOAT)
+                xyz = (grid.min_coords + np.random.rand(3) * delta).astype(pykonal.DTYPE_REAL)
                 v1, v2 = ii.interpolate(xyz), ii(xyz)
                 self.assertEqual(v1, v2)
                 self.assertGreater(v1, vmin)
@@ -72,15 +70,15 @@ class LinearInterpolator3DTestCase(unittest.TestCase):
                 grid,
                 np.full(
                     vv.shape,
-                    fill_value=ERR_FLOAT,
-                    dtype=pykonal.DTYPE_FLOAT
+                    fill_value=pykonal.ERROR_REAL,
+                    dtype=pykonal.DTYPE_REAL
                 )
             )
             for j in range(10):
-                xyz = (grid.min_coords + np.random.rand(3) * delta).astype(pykonal.DTYPE_FLOAT)
+                xyz = (grid.min_coords + np.random.rand(3) * delta).astype(pykonal.DTYPE_REAL)
                 v1, v2 = ii.interpolate(xyz), ii(xyz)
                 self.assertEqual(v1, v2)
-                self.assertEqual(v1, ERR_FLOAT)
+                self.assertEqual(v1, pykonal.ERROR_REAL)
 
 
     def test_interpolate_edge_case_lower(self):
