@@ -16,7 +16,9 @@ email           = 'malcolm.white@.usc.edu'
 author          = 'Malcolm C. A. White'
 requires_python = '>=3'
 packages        = ['pykonal']
-package_data    = {'pykonal': ['data/marmousi_2d.npz']}
+package_data    = {
+    'pykonal': ['data/marmousi_2d.npz', 'tests/data/*'],
+}
 required        = ['cython', 'numpy', 'scipy']
 extras          = {'tests': ['nose']}
 ext_modules     = cythonize('pykonal/pykonal.pyx')
