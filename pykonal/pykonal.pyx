@@ -46,7 +46,7 @@ class EikonalSolver(object):
         self._pgrid   = GridND(ndim=self._ndim)
         self._solved  = False
         self._sources = []
-        self._mode    = mode
+        self._mode    = mode.lower()
 
 
     @property
@@ -68,7 +68,7 @@ class EikonalSolver(object):
                 self.pgrid.node_intervals,
                 np.append(self.pgrid.npts, 1)
             ).astype(DTYPE_REAL)
-            if self._mode.lower() == 'spherical':
+            if self._mode == 'spherical':
                 self._norm[..., 1] *= self.pgrid[..., 0]
                 self._norm[..., 2] *= self.pgrid[..., 0] \
                     * np.sin(self.pgrid[..., 1])
@@ -134,6 +134,23 @@ class EikonalSolver(object):
 
     @property
     def sources(self):
+        if self._mode == 'cartesian':
+            return (self._get_sources_cartesian())
+        elif self._mode == 'spherical':
+            return (self._get_sources_spherical())
+
+
+    def _get_sources_spherical(self):
+        sources = []
+        for i2 in range(self.pgrid.npts[1]):
+            for i3 in range(self.pgrid.npts[2]):
+                idx = (0, i2, i3)
+                t0 = self.pgrid.min_coords[0] / self.vvp[0, i2, i3]
+                sources.append((idx, t0))
+        return (sources)
+
+
+    def _get_sources_cartesian(self):
         sources = []
         for src, t0 in self._sources:
             for iax in range(self.ndim):
@@ -363,8 +380,8 @@ cdef class LinearInterpolator3D(object):
     cdef _REAL_t[:]       _node_intervals
     cdef _REAL_t[3]       _min_coords
     cdef _REAL_t[3]       _max_coords
-    cdef Py_ssize_t[3]  _max_idx
-    cdef bint[3]        _iax_isnull
+    cdef Py_ssize_t[3]    _max_idx
+    cdef bint[3]          _iax_isnull
 
     def __init__(self, grid, values):
         self._grid           = grid[...]
@@ -547,9 +564,9 @@ cdef tuple update(
     cdef int              count_a = 0
     cdef int              count_b = 0
     cdef int[2]           order
-    cdef _REAL_t            a, b, c, bfd, ffd
-    cdef _REAL_t[2]         fdu
-    cdef _REAL_t[3]         aa, bb, cc
+    cdef _REAL_t          a, b, c, bfd, ffd, new
+    cdef _REAL_t[2]       fdu
+    cdef _REAL_t[3]       aa, bb, cc
 
     max_idx       = [is_alive.shape[0], is_alive.shape[1], is_alive.shape[2]]
 
@@ -720,12 +737,12 @@ cdef tuple update(
                 if b ** 2 < 4 * a * c:
                     if -b / (2 * a) < uu[nbr[0], nbr[1], nbr[2]]:
                         # This may not be mathematically permissible
-                        uu[nbr[0], nbr[1], nbr[2]] = -b / (2 * a)
+                        new = -b / (2 * a)
                     count_b += 1
                 else:
-                    uu[nbr[0], nbr[1], nbr[2]] = (
-                        -b + libc.math.sqrt(b ** 2 - 4 * a * c)
-                    ) / (2 * a)
+                    new = (-b + libc.math.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
+                if new < uu[nbr[0], nbr[1], nbr[2]]:
+                    uu[nbr[0], nbr[1], nbr[2]] = new
             # Tag as Close all neighbours of Trial that are not Alive
             # If the neighbour is in Far, remove it from that list and add it to
             # Close
