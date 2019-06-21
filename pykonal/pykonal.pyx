@@ -1,4 +1,6 @@
-# cython: boundscheck=False,cdivision=True
+# cython: boundscheck=False
+# cython: cdivision=True
+# cython: language_level=3
 # distutils: language = c++
 
 import collections
