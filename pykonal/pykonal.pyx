@@ -154,7 +154,7 @@ class EikonalSolver(object):
                     )
                 )
             vvp  = np.zeros(self.pgrid.npts, dtype=DTYPE_REAL)
-            vi    = LinearInterpolator3D(self.vgrid, self.vv)
+            vi    = LinearInterpolator3D(self.vgrid, self.vv).interpolate
             pgrid = self.pgrid[...]
             for i1 in range(self.pgrid.npts[0]):
                 for i2 in range(self.pgrid.npts[1]):
@@ -498,8 +498,8 @@ cdef class LinearInterpolator3D(object):
     cdef _REAL_t[:]       _node_intervals
     cdef _REAL_t[3]       _min_coords
     cdef _REAL_t[3]       _max_coords
-    cdef Py_ssize_t[3]  _max_idx
-    cdef bint[3]        _iax_isnull
+    cdef Py_ssize_t[3]    _max_idx
+    cdef bint[3]          _iax_isnull
 
     def __init__(self, grid, values):
         self._grid           = grid[...]
@@ -508,7 +508,9 @@ cdef class LinearInterpolator3D(object):
         self._max_idx        = grid.npts - 1
         self._min_coords     = grid.min_coords
         self._max_coords     = grid.max_coords
-        self._iax_isnull     = [True if iax in grid.iax_null else False for iax in range(grid.ndim)]
+        self._iax_isnull     = [
+            True if iax in grid.iax_null else False for iax in range(grid.ndim)
+        ]
 
 
     def __call__(self, point):
