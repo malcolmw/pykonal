@@ -15,9 +15,9 @@ from libcpp.vector cimport vector as cpp_vector
 from libc.stdlib   cimport malloc, free
 
 # Define the level of computational precision.
-ctypedef np.float32_t _REAL_t
+ctypedef np.float64_t _REAL_t
 ctypedef np.uint16_t  _UINT_t
-DTYPE_REAL = np.float32
+DTYPE_REAL = np.float64
 DTYPE_UINT = np.uint16
 
 DEF _ERROR_REAL = -999999999999.
