@@ -3,15 +3,16 @@
 # cython: language_level=3
 # distutils: language = c++
 
+# Python imports
 import collections
 import itertools
 import numpy as np
-import scipy.interpolate
-import scipy.ndimage
+
+# Cython imports
 cimport numpy as np
 cimport libc.math
 from libcpp.vector cimport vector as cpp_vector
-from libc.stdlib cimport malloc, free
+from libc.stdlib   cimport malloc, free
 
 # Define the level of computational precision.
 ctypedef np.float32_t _REAL_t
@@ -27,7 +28,7 @@ cdef _REAL_t MAX_REAL = np.finfo(DTYPE_REAL).max
 
 # A simple structure to hold 3D array indices.
 cdef struct Index3D:
-    Py_ssize_t i1, i2, i3
+    Py_ssize_t ix, iy, iz
 
 # A simple Exception class.
 class OutOfBoundsError(Exception):
@@ -36,7 +37,7 @@ class OutOfBoundsError(Exception):
 
 
 class EikonalSolver(object):
-    def __init__(self, mode='cartesian'):
+    def __init__(self):
         '''
         Solves the Eikonal equation in 3D cartesian coordinates.
         '''
@@ -46,7 +47,6 @@ class EikonalSolver(object):
         self._pgrid   = GridND(ndim=self._ndim)
         self._solved  = False
         self._sources = []
-        self._mode    = mode.lower()
 
 
     @property
@@ -61,18 +61,6 @@ class EikonalSolver(object):
     def ndim(self):
         return (self._ndim)
 
-    @property
-    def norm(self):
-        if not hasattr(self, '_norm'):
-            self._norm = np.tile(
-                self.pgrid.node_intervals,
-                np.append(self.pgrid.npts, 1)
-            ).astype(DTYPE_REAL)
-            if self._mode == 'spherical':
-                self._norm[..., 1] *= self.pgrid[..., 0]
-                self._norm[..., 2] *= self.pgrid[..., 0] \
-                    * np.sin(self.pgrid[..., 1])
-        return (self._norm)
 
     @property
     def vv(self):
@@ -134,23 +122,6 @@ class EikonalSolver(object):
 
     @property
     def sources(self):
-        if self._mode == 'cartesian':
-            return (self._get_sources_cartesian())
-        elif self._mode == 'spherical':
-            return (self._get_sources_spherical())
-
-
-    def _get_sources_spherical(self):
-        sources = []
-        for i2 in range(self.pgrid.npts[1]):
-            for i3 in range(self.pgrid.npts[2]):
-                idx = (0, i2, i3)
-                t0 = self.pgrid.min_coords[0] / self.vvp[0, i2, i3]
-                sources.append((idx, t0))
-        return (sources)
-
-
-    def _get_sources_cartesian(self):
         sources = []
         for src, t0 in self._sources:
             for iax in range(self.ndim):
@@ -202,8 +173,7 @@ class EikonalSolver(object):
             is_alive,
             close,
             is_far,
-            self.pgrid.node_intervals,
-            self.norm
+            self.pgrid.node_intervals
         )
         self._uu = np.asarray(uu)
         self._uu[self._uu == MAX_REAL] = np.inf
@@ -380,8 +350,8 @@ cdef class LinearInterpolator3D(object):
     cdef _REAL_t[:]       _node_intervals
     cdef _REAL_t[3]       _min_coords
     cdef _REAL_t[3]       _max_coords
-    cdef Py_ssize_t[3]    _max_idx
-    cdef bint[3]          _iax_isnull
+    cdef Py_ssize_t[3]  _max_idx
+    cdef bint[3]        _iax_isnull
 
     def __init__(self, grid, values):
         self._grid           = grid[...]
@@ -390,9 +360,7 @@ cdef class LinearInterpolator3D(object):
         self._max_idx        = grid.npts - 1
         self._min_coords     = grid.min_coords
         self._max_coords     = grid.max_coords
-        self._iax_isnull     = [
-            True if iax in grid.iax_null else False for iax in range(grid.ndim)
-        ]
+        self._iax_isnull     = [True if iax in grid.iax_null else False for iax in range(grid.ndim)]
 
 
     def __call__(self, point):
@@ -416,20 +384,20 @@ cdef class LinearInterpolator3D(object):
                 )
             idx[iax] = (point[iax] - self._min_coords[iax]) / self._node_intervals[iax]
             delta[iax] = (idx[iax] % 1.) * self._node_intervals[iax]
-        i1 = <Py_ssize_t> idx[0]
-        i2 = <Py_ssize_t> idx[1]
-        i3 = <Py_ssize_t> idx[2]
-        di1 = 0 if self._iax_isnull[0] == 1 or i1 == self._max_idx[0] else 1
-        di2 = 0 if self._iax_isnull[1] == 1 or i2 == self._max_idx[1] else 1
-        di3 = 0 if self._iax_isnull[2] == 1 or i3 == self._max_idx[2] else 1
-        f000 = self._values[i1,     i2,     i3]
-        f100 = self._values[i1+di1, i2,     i3]
-        f110 = self._values[i1+di1, i2+di2, i3]
-        f101 = self._values[i1+di1, i2,     i3+di3]
-        f111 = self._values[i1+di1, i2+di2, i3+di3]
-        f010 = self._values[i1,     i2+di2, i3]
-        f011 = self._values[i1,     i2+di2, i3+di3]
-        f001 = self._values[i1,     i2,     i3+di3]
+        ix = <Py_ssize_t> idx[0]
+        iy = <Py_ssize_t> idx[1]
+        iz = <Py_ssize_t> idx[2]
+        dix = 0 if self._iax_isnull[0] == 1 or ix == self._max_idx[0] else 1
+        diy = 0 if self._iax_isnull[1] == 1 or iy == self._max_idx[1] else 1
+        diz = 0 if self._iax_isnull[2] == 1 or iz == self._max_idx[2] else 1
+        f000 = self._values[ix,     iy,     iz]
+        f100 = self._values[ix+dix, iy,     iz]
+        f110 = self._values[ix+dix, iy+diy, iz]
+        f101 = self._values[ix+dix, iy,     iz+diz]
+        f111 = self._values[ix+dix, iy+diy, iz+diz]
+        f010 = self._values[ix,     iy+diy, iz]
+        f011 = self._values[ix,     iy+diy, iz+diz]
+        f001 = self._values[ix,     iy,     iz+diz]
         f00  = f000 + (f100 - f000) / self._node_intervals[0] * delta[0]
         f10  = f010 + (f110 - f010) / self._node_intervals[0] * delta[0]
         f01  = f001 + (f101 - f001) / self._node_intervals[0] * delta[0]
@@ -469,9 +437,9 @@ cdef void init_sources(
     cdef Index3D idx
 
     for source in sources:
-        idx.i1, idx.i2, idx.i3 = source[0][0], source[0][1], source[0][2]
-        uu[idx.i1, idx.i2, idx.i3] = source[1]
-        is_far[idx.i1, idx.i2, idx.i3] = False
+        idx.ix, idx.iy, idx.iz = source[0][0], source[0][1], source[0][2]
+        uu[idx.ix, idx.iy, idx.iz] = source[1]
+        is_far[idx.ix, idx.iy, idx.iz] = False
         heap_push(close, uu, idx)
 
 
@@ -491,7 +459,7 @@ cdef void sift_down(
     while j > j_start:
         j_parent = (j - 1) >> 1
         idx_parent = idxs[j_parent]
-        if uu[idx_new.i1, idx_new.i2, idx_new.i3] < uu[idx_parent.i1, idx_parent.i2, idx_parent.i3]:
+        if uu[idx_new.ix, idx_new.iy, idx_new.iz] < uu[idx_parent.ix, idx_parent.iy, idx_parent.iz]:
             idxs[j] = idx_parent
             j = j_parent
             continue
@@ -517,7 +485,7 @@ cdef void sift_up(
         # Set childpos to index of smaller child.
         j_right = j_child + 1
         idx_child, idx_right = idxs[j_child], idxs[j_right]
-        if j_right < j_end and not uu[idx_child.i1, idx_child.i2, idx_child.i3] < uu[idx_right.i1, idx_right.i2, idx_right.i3]:
+        if j_right < j_end and not uu[idx_child.ix, idx_child.iy, idx_child.iz] < uu[idx_right.ix, idx_right.iy, idx_right.iz]:
             j_child = j_right
         # Move the smaller child up.
         idxs[j] = idxs[j_child]
@@ -529,20 +497,15 @@ cdef void sift_up(
     sift_down(idxs, uu, j_start, j)
 
 cdef bint stencil(
-    Py_ssize_t i1,
-    Py_ssize_t i2,
-    Py_ssize_t i3,
-    Py_ssize_t max_i1,
-    Py_ssize_t max_i2,
-    Py_ssize_t max_i3
+        Py_ssize_t ix, Py_ssize_t iy, Py_ssize_t iz, Py_ssize_t max_ix, Py_ssize_t max_iy, Py_ssize_t max_iz
 ):
     return (
-            (i1 >= 0)
-        and (i1 < max_i1)
-        and (i2 >= 0)
-        and (i2 < max_i2)
-        and (i3 >= 0)
-        and (i3 < max_i3)
+            (ix >= 0)
+        and (ix < max_ix)
+        and (iy >= 0)
+        and (iy < max_iy)
+        and (iz >= 0)
+        and (iz < max_iz)
     )
 
 
@@ -553,10 +516,9 @@ cdef tuple update(
         cpp_vector[Index3D] close,
         np.ndarray[np.npy_bool, ndim=3, cast=True] is_far,
         _REAL_t[:] dd,
-        _REAL_t[:,:,:,:] norm
 ):
     '''The update algorithm to propagate the wavefront.'''
-    cdef Py_ssize_t       i, iax, idrxn, trial_i1, trial_i2, trial_i3
+    cdef Py_ssize_t       i, iax, idrxn, trial_ix, trial_iy, trial_iz
     cdef Py_ssize_t[6][3] nbrs
     cdef Py_ssize_t[3]    max_idx, nbr, switch
     cdef Py_ssize_t[2]    drxns = [-1, 1]
@@ -564,190 +526,194 @@ cdef tuple update(
     cdef int              count_a = 0
     cdef int              count_b = 0
     cdef int[2]           order
-    cdef _REAL_t          a, b, c, bfd, ffd, new
-    cdef _REAL_t[2]       fdu
-    cdef _REAL_t[3]       aa, bb, cc
+    cdef _REAL_t            a, b, c, bfd, ffd
+    cdef _REAL_t[2]         fdu
+    cdef _REAL_t[3]         aa, bb, cc
 
     max_idx       = [is_alive.shape[0], is_alive.shape[1], is_alive.shape[2]]
+    dx, dy, dz    = dd
+    dd2           = [dx**2, dy**2, dz**2]
+    dx2, dy2, dz2 = dx**2, dy**2, dz**2
+    for iax in range(3):
+        assert dd[iax] > 0
 
     while close.size() > 0:
         # Let Trial be the point in Close with the smallest value of u
         trial_idx = heap_pop(close, uu)
-        trial_i1, trial_i2, trial_i3 = trial_idx.i1, trial_idx.i2, trial_idx.i3
-        is_alive[trial_i1, trial_i2, trial_i3] = True
+        trial_ix, trial_iy, trial_iz = trial_idx.ix, trial_idx.iy, trial_idx.iz
+        is_alive[trial_ix, trial_iy, trial_iz] = True
 
-        nbrs[0][0] = trial_i1 - 1
-        nbrs[0][1] = trial_i2
-        nbrs[0][2] = trial_i3
-        nbrs[1][0] = trial_i1 + 1
-        nbrs[1][1] = trial_i2
-        nbrs[1][2] = trial_i3
-        nbrs[2][0] = trial_i1
-        nbrs[2][1] = trial_i2 - 1
-        nbrs[2][2] = trial_i3
-        nbrs[3][0] = trial_i1
-        nbrs[3][1] = trial_i2 + 1
-        nbrs[3][2] = trial_i3
-        nbrs[4][0] = trial_i1
-        nbrs[4][1] = trial_i2
-        nbrs[4][2] = trial_i3 - 1
-        nbrs[5][0] = trial_i1
-        nbrs[5][1] = trial_i2
-        nbrs[5][2] = trial_i3 + 1
+        nbrs[0][0] = trial_ix - 1
+        nbrs[0][1] = trial_iy
+        nbrs[0][2] = trial_iz
+        nbrs[1][0] = trial_ix + 1
+        nbrs[1][1] = trial_iy
+        nbrs[1][2] = trial_iz
+        nbrs[2][0] = trial_ix
+        nbrs[2][1] = trial_iy - 1
+        nbrs[2][2] = trial_iz
+        nbrs[3][0] = trial_ix
+        nbrs[3][1] = trial_iy + 1
+        nbrs[3][2] = trial_iz
+        nbrs[4][0] = trial_ix
+        nbrs[4][1] = trial_iy
+        nbrs[4][2] = trial_iz - 1
+        nbrs[5][0] = trial_ix
+        nbrs[5][1] = trial_iy
+        nbrs[5][2] = trial_iz + 1
         for i in range(6):
-            nbr_i1 = nbrs[i][0]
-            nbr_i2 = nbrs[i][1]
-            nbr_i3 = nbrs[i][2]
+            nbr_ix = nbrs[i][0]
+            nbr_iy = nbrs[i][1]
+            nbr_iz = nbrs[i][2]
             nbr    = nbrs[i]
             if not stencil(nbr[0], nbr[1], nbr[2], max_idx[0], max_idx[1], max_idx[2]) \
                     or is_alive[nbr[0], nbr[1], nbr[2]]:
                 continue
             # Recompute the values of u at all Close neighbours of Trial
             # by solving the piecewise quadratic equation.
-            if vv[nbr[0], nbr[1], nbr[2]] > 0:
-                for iax in range(3):
-                    switch = [0, 0, 0]
-                    idrxn = 0
-                    for idrxn in range(2):
-                        switch[iax] = drxns[idrxn]
-                        if (
-                                   (drxns[idrxn] == -1 and nbr[iax] > 1)
-                                or (drxns[idrxn] == 1 and nbr[iax] < max_idx[iax] - 2)
-                        )\
-                                and is_alive[
-                                    nbr[0]+2*switch[0],
-                                    nbr[1]+2*switch[1],
-                                    nbr[2]+2*switch[2]
-                                ]\
-                                and is_alive[
-                                    nbr[0]+switch[0],
-                                    nbr[1]+switch[1],
-                                    nbr[2]+switch[2]
-                                ]\
-                                and uu[
-                                    nbr[0]+2*switch[0],
-                                    nbr[1]+2*switch[1],
-                                    nbr[2]+2*switch[2]
-                                ] <= uu[
-                                    nbr[0]+switch[0],
-                                    nbr[1]+switch[1],
-                                    nbr[2]+switch[2]
-                                ]\
-                        :
-                            order[idrxn] = 2
-                            fdu[idrxn]  = drxns[idrxn] * (
-                              - 3 * uu[
-                                  nbr[0],
-                                  nbr[1],
-                                  nbr[2]
-                              ]\
-                              + 4 * uu[
-                                  nbr[0]+switch[0],
-                                  nbr[1]+switch[1],
-                                  nbr[2]+switch[2]
-                              ]\
-                              -     uu[
-                                  nbr[0]+2*switch[0],
-                                  nbr[1]+2*switch[1],
-                                  nbr[2]+2*switch[2]
-                              ]
-                            ) / (2 * norm[nbr[0], nbr[1], nbr[2], iax])
-                        elif (
-                                   (drxns[idrxn] == -1 and nbr[iax] > 0)
-                                or (drxns[idrxn] ==  1 and nbr[iax] < max_idx[iax] - 1)
-                        )\
-                                and is_alive[
-                                    nbr[0]+switch[0],
-                                    nbr[1]+switch[1],
-                                    nbr[2]+switch[2]
-                                ]\
-                        :
-                            order[idrxn] = 1
-                            fdu[idrxn] = drxns[idrxn] * (
-                                uu[
-                                    nbr[0]+switch[0],
-                                    nbr[1]+switch[1],
-                                    nbr[2]+switch[2]
-                                ]
-                              - uu[nbr[0], nbr[1], nbr[2]]
-                            ) / norm[nbr[0], nbr[1], nbr[2], iax]
-                        else:
-                            order[idrxn], fdu[idrxn] = 0, 0
-                    if fdu[0] > -fdu[1]:
-                        # Do the update using the backward operator
-                        idrxn, switch[iax] = 0, -1
-                    else:
-                        # Do the update using the forward operator
-                        idrxn, switch[iax] = 1, 1
-                    if order[idrxn] == 2:
-                        aa[iax] = 9 / (4 * norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
-                        bb[iax] = (
-                            6 * uu[
+            for iax in range(3):
+                switch = [0, 0, 0]
+                idrxn = 0
+                for idrxn in range(2):
+                    switch[iax] = drxns[idrxn]
+                    if (
+                               (drxns[idrxn] == -1 and nbr[iax] > 1)
+                            or (drxns[idrxn] == 1 and nbr[iax] < max_idx[iax] - 2)
+                    )\
+                            and is_alive[
                                 nbr[0]+2*switch[0],
                                 nbr[1]+2*switch[1],
                                 nbr[2]+2*switch[2]
-                            ]
-                         - 24 * uu[
+                            ]\
+                            and is_alive[
                                 nbr[0]+switch[0],
                                 nbr[1]+switch[1],
                                 nbr[2]+switch[2]
-                            ]
-                        ) / (4 * norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
-                        cc[iax] = (
+                            ]\
+                            and uu[
+                                nbr[0]+2*switch[0],
+                                nbr[1]+2*switch[1],
+                                nbr[2]+2*switch[2]
+                            ] <= uu[
+                                nbr[0]+switch[0],
+                                nbr[1]+switch[1],
+                                nbr[2]+switch[2]
+                            ]\
+                    :
+                        order[idrxn] = 2
+                        fdu[idrxn]  = drxns[idrxn] * (
+                          - 3 * uu[
+                              nbr[0],
+                              nbr[1],
+                              nbr[2]
+                          ]\
+                          + 4 * uu[
+                              nbr[0]+switch[0],
+                              nbr[1]+switch[1],
+                              nbr[2]+switch[2]
+                          ]\
+                          -     uu[
+                              nbr[0]+2*switch[0],
+                              nbr[1]+2*switch[1],
+                              nbr[2]+2*switch[2]
+                          ]
+                        ) / (2 * dd[iax])
+                    elif (
+                               (drxns[idrxn] == -1 and nbr[iax] > 0)
+                            or (drxns[idrxn] ==  1 and nbr[iax] < max_idx[iax] - 1)
+                    )\
+                            and is_alive[
+                                nbr[0]+switch[0],
+                                nbr[1]+switch[1],
+                                nbr[2]+switch[2]
+                            ]\
+                    :
+                        order[idrxn] = 1
+                        fdu[idrxn] = drxns[idrxn] * (
                             uu[
-                                nbr[0]+2*switch[0],
-                                nbr[1]+2*switch[1],
-                                nbr[2]+2*switch[2]
-                            ]**2 \
-                            - 8 * uu[
-                                nbr[0]+2*switch[0],
-                                nbr[1]+2*switch[1],
-                                nbr[2]+2*switch[2]
-                            ] * uu[
                                 nbr[0]+switch[0],
                                 nbr[1]+switch[1],
                                 nbr[2]+switch[2]
                             ]
-                            + 16 * uu[
-                                nbr[0]+switch[0],
-                                nbr[1]+switch[1],
-                                nbr[2]+switch[2]
-                            ]**2
-                        ) / (4 * norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
-                    elif order[idrxn] == 1:
-                        aa[iax] = 1 / norm[nbr[0], nbr[1], nbr[2], iax] ** 2
-                        bb[iax] = -2 * uu[
-                            nbr[0]+switch[0],
-                            nbr[1]+switch[1],
-                            nbr[2]+switch[2]
-                        ] / norm[nbr[0], nbr[1], nbr[2], iax] ** 2
-                        cc[iax] = uu[
-                            nbr[0]+switch[0],
-                            nbr[1]+switch[1],
-                            nbr[2]+switch[2]
-                        ]**2 / norm[nbr[0], nbr[1], nbr[2], iax] ** 2
-                    elif order[idrxn] == 0:
-                        aa[iax], bb[iax], cc[iax] = 0, 0, 0
-                a = aa[0] + aa[1] + aa[2]
-                if a == 0:
-                    count_a += 1
-                    continue
-                b = bb[0] + bb[1] + bb[2]
-                c = cc[0] + cc[1] + cc[2] - 1/vv[nbr[0], nbr[1], nbr[2]]**2
-                if b ** 2 < 4 * a * c:
-                    if -b / (2 * a) < uu[nbr[0], nbr[1], nbr[2]]:
-                        # This may not be mathematically permissible
-                        new = -b / (2 * a)
-                    count_b += 1
+                          - uu[nbr[0], nbr[1], nbr[2]]
+                        ) / dd[iax]
+                    else:
+                        order[idrxn], fdu[idrxn] = 0, 0
+                if fdu[0] > -fdu[1]:
+                    # Do the update using the backward operator
+                    idrxn, switch[iax] = 0, -1
                 else:
-                    new = (-b + libc.math.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
-                if new < uu[nbr[0], nbr[1], nbr[2]]:
-                    uu[nbr[0], nbr[1], nbr[2]] = new
+                    # Do the update using the forward operator
+                    idrxn, switch[iax] = 1, 1
+                if order[idrxn] == 2:
+                    aa[iax] = 9 / (4 * dd2[iax])
+                    bb[iax] = (
+                        6 * uu[
+                            nbr[0]+2*switch[0],
+                            nbr[1]+2*switch[1],
+                            nbr[2]+2*switch[2]
+                        ]
+                     - 24 * uu[
+                            nbr[0]+switch[0],
+                            nbr[1]+switch[1],
+                            nbr[2]+switch[2]
+                        ]
+                    ) / (4 * dd2[iax])
+                    cc[iax] = (
+                        uu[
+                            nbr[0]+2*switch[0],
+                            nbr[1]+2*switch[1],
+                            nbr[2]+2*switch[2]
+                        ]**2 \
+                        - 8 * uu[
+                            nbr[0]+2*switch[0],
+                            nbr[1]+2*switch[1],
+                            nbr[2]+2*switch[2]
+                        ] * uu[
+                            nbr[0]+switch[0],
+                            nbr[1]+switch[1],
+                            nbr[2]+switch[2]
+                        ]
+                        + 16 * uu[
+                            nbr[0]+switch[0],
+                            nbr[1]+switch[1],
+                            nbr[2]+switch[2]
+                        ]**2
+                    ) / (4 * dd2[iax])
+                elif order[idrxn] == 1:
+                    aa[iax] = 1 / dd2[iax]
+                    bb[iax] = -2 * uu[
+                        nbr[0]+switch[0],
+                        nbr[1]+switch[1],
+                        nbr[2]+switch[2]
+                    ] / dd2[iax]
+                    cc[iax] = uu[
+                        nbr[0]+switch[0],
+                        nbr[1]+switch[1],
+                        nbr[2]+switch[2]
+                    ]**2 / dd2[iax]
+                elif order[idrxn] == 0:
+                    aa[iax], bb[iax], cc[iax] = 0, 0, 0
+            a = aa[0] + aa[1] + aa[2]
+            if a == 0:
+                count_a += 1
+                continue
+            b = bb[0] + bb[1] + bb[2]
+            c = cc[0] + cc[1] + cc[2] - 1/vv[nbr[0], nbr[1], nbr[2]]**2
+            if b ** 2 < 4 * a * c:
+                if -b / (2 * a) < uu[nbr[0], nbr[1], nbr[2]]:
+                    # This may not be mathematically permissible
+                    uu[nbr[0], nbr[1], nbr[2]] = -b / (2 * a)
+                count_b += 1
+            else:
+                uu[nbr[0], nbr[1], nbr[2]] = (
+                    -b + libc.math.sqrt(b ** 2 - 4 * a * c)
+                ) / (2 * a)
             # Tag as Close all neighbours of Trial that are not Alive
             # If the neighbour is in Far, remove it from that list and add it to
             # Close
             if is_far[nbr[0], nbr[1], nbr[2]]:
-                idx.i1, idx.i2, idx.i3 = nbr_i1, nbr_i2, nbr_i3
+                idx.ix, idx.iy, idx.iz = nbr_ix, nbr_iy, nbr_iz
                 heap_push(close, uu, idx)
                 is_far[nbr[0], nbr[1], nbr[2]] = False
     return (count_a, count_b)
