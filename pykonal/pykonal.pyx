@@ -23,9 +23,6 @@ DTYPE_UINT = np.uint16
 DEF _ERROR_REAL = -999999999999.
 ERROR_REAL      = DTYPE_REAL(_ERROR_REAL)
 
-# Define a floating point value to represent infinity.
-cdef _REAL_t MAX_REAL = np.finfo(DTYPE_REAL).max
-
 # A simple structure to hold 3D array indices.
 cdef struct Index3D:
     Py_ssize_t i1, i2, i3
