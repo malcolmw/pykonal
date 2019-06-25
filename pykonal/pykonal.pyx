@@ -41,18 +41,41 @@ class EikonalSolver(object):
         self._ndim    = 3
         self._class   = str(self.__class__).strip('>\'').split('.')[-1]
         self._vgrid   = GridND(ndim=self._ndim)
-        self._pgrid   = GridND(ndim=self._ndim)
-        self._solved  = False
-        self._sources = []
+        self._mode    = 'cartesian'
 
+    @property
+    def close(self):
+        if not hasattr(self, '_close'):
+            self._close = []
+        return (self._close)
 
     @property
     def iax_null(self):
         return (self.pgrid.iax_null)
 
     @property
-    def vgrid(self):
-        return (self._vgrid)
+    def is_alive(self):
+        if not hasattr(self, '_is_alive'):
+            self._is_alive = np.full(self.pgrid.npts, fill_value=False, dtype=np.bool)
+        return (self._is_alive)
+
+    @property
+    def is_far(self):
+        if not hasattr(self, '_is_far'):
+            self._is_far = np.full(self.pgrid.npts, fill_value=True, dtype=np.bool)
+        return (self._is_far)
+
+    @property
+    def mode(self):
+        return (self._mode)
+
+    @mode.setter
+    def mode(self, value):
+        value = value.lower()
+        if value not in ('hybrid-cartesian', 'hybrid-spherical', 'cartesian', 'spherical'):
+            raise (ValueError(f'Invalid mode specification: {value}'))
+        self._mode = value
+
 
     @property
     def ndim(self):
@@ -72,6 +95,40 @@ class EikonalSolver(object):
         return (self._norm)
 
     @property
+    def pgrid(self):
+        if not hasattr(self, '_pgrid'):
+            self._pgrid = GridND(ndim=self._ndim)
+            for attr in ('min_coords', 'node_intervals', 'npts'):
+                setattr(self._pgrid, attr, getattr(self.vgrid, attr))
+        return (self._pgrid)
+
+    @property
+    def src_loc(self):
+        return (self._src_loc)
+
+    @src_loc.setter
+    def src_loc(self, value):
+        if not isinstance(value, collections.Iterable):
+            raise (TypeError(f'{self._class}.src_loc value must be <Iterable> type'))
+        if len(value) != self._ndim:
+            raise (ValueError(f'{self._class}.src_loc must have len() == {self._ndim}'))
+        value = np.array(value, dtype=DTYPE_REAL)
+        if np.any(value < self.pgrid.min_coords) or np.any(value > self.pgrid.max_coords):
+            raise (OutOfBoundsError('Source location lies outside of propagation grid.'))
+        self._src_loc = value
+
+
+    @property
+    def uu(self):
+        if not hasattr(self, '_uu'):
+            self._uu = np.full(self.pgrid.npts, fill_value=np.inf, dtype=DTYPE_REAL)
+        return (self._uu)
+
+    @property
+    def vgrid(self):
+        return (self._vgrid)
+
+    @property
     def vv(self):
         return (self._vv)
 
@@ -80,7 +137,6 @@ class EikonalSolver(object):
         if not np.all(value.shape == self.vgrid.npts):
             raise (ValueError('SHAPE ERROR!'))
         self._vv = value.astype(DTYPE_REAL)
-
 
     @property
     def vvp(self):
@@ -112,82 +168,15 @@ class EikonalSolver(object):
         return (self._vvp)
 
 
-    @property
-    def pgrid(self):
-        return (self._pgrid)
-
-
-    @property
-    def uu(self):
-        if self._solved is False:
-            self.solve()
-            self._solved = True
-        return (self._uu)
-
-
-    def add_source(self, src, t0=0):
-        self._sources.append((src, t0))
-
-
-    @property
-    def sources(self):
-        sources = []
-        for src, t0 in self._sources:
-            for iax in range(self.ndim):
-                if self.pgrid.min_coords[iax] > src[iax] \
-                        or self.pgrid.max_coords[iax] < src[iax]:
-                    raise (
-                        ValueError(
-                            'Source location lies outside of propagation grid'
-                        )
-                    )
-            idx00 = (np.asarray(src) - self.pgrid.min_coords) \
-                  / self.pgrid.node_intervals
-            idx0 = idx00.astype(DTYPE_UINT)
-            mod = np.argwhere(np.mod(idx00, 1) != 0).flatten()
-            idxs = []
-            for delta in itertools.product(
-                    *[[0, 1] if idx in mod else [0] for idx in range(self.ndim)]
-            ):
-                idxs.append(idx0 + np.array(delta))
-            for idx in idxs:
-                idx = tuple(idx)
-                t = t0 + np.sqrt(np.sum(np.square(self.pgrid[idx] - src)))\
-                    / self.vvp[idx]
-                sources.append((idx, t))
-        return (sources)
-
-
-    def clear_sources(self):
-        self._sources = []
-
-
     def solve(self):
-        cdef cpp_vector[Index3D] close
-        cdef _REAL_t[:,:,:] uu
-        cdef np.ndarray[np.npy_bool, ndim=3, cast=True] is_alive, is_far
-
-        shape = self.pgrid.npts
-        uu       = np.full(shape, fill_value=MAX_REAL, dtype=DTYPE_REAL)
-        is_alive = np.full(shape, fill_value=False, dtype=np.bool)
-        is_far   = np.full(shape, fill_value=True, dtype=np.bool)
-
-        if hasattr(self, '_vvp'):
-            del(self._vvp)
-
-        init_sources(self.sources, uu, close, is_far)
-        self.denominator_errors, self.determinant_errors = update(
-            uu,
-            self.vvp,
-            is_alive,
-            close,
-            is_far,
-            self.pgrid.node_intervals
-        )
-        self._uu = np.asarray(uu)
-        self._uu[self._uu == MAX_REAL] = np.inf
-        self._solved = True
-        del(self._vvp)
+        if self.mode == 'hybrid-cartesian':
+            self._solve_hybrid_cartesian()
+        elif self.mode == 'hybrid-spherical':
+            raise (NotImplementedError('Hybrid spherical coordinates are not implemented yet.'))
+        elif self.mode in ('cartesian', 'spherical'):
+            self._update()
+        else:
+            raise (ValueError('Invalid mode specification. This should never happen.'))
 
 
     def trace_ray(self, *args, method='euler', tolerance=1e-2):
@@ -195,6 +184,124 @@ class EikonalSolver(object):
             return (self._trace_ray_euler(*args, tolerance=tolerance))
         else:
             raise (NotImplementedError('Only Euler integration is implemented yet'))
+
+
+    def _solve_hybrid_cartesian(self):
+        if not hasattr(self, '_src_loc'):
+            raise (AttributeError('Source is unspecified.'))
+
+
+        # Solve in the nearfield using spherical coordinates
+        dr                = np.min(self.pgrid.node_intervals)
+        theta_min, ntheta = (0, 11) if 2 not in self.iax_null else (np.pi/2, 1)
+        phi_min, nphi     = (0, 21) if 1 not in self.iax_null else (0, 1)
+
+
+        # Calculate the distance from the source to each node in the
+        # farfield pgrid.
+        dd = np.sqrt(np.sum(np.square(self.pgrid[...] - self.src_loc), axis=-1))
+        # If the source lies directly on a node, the first layer of
+        # nodes in the nearfield pgrid coincide with farfield nodes one
+        # index away. Otherwise, the first layer of nodes coincides
+        # with the nearest node.
+        if np.any(dd == 0):
+            r_min = dr
+            for idx in np.argwhere(dd == 0):
+                idx = tuple(idx)
+                self.close.append(idx)
+                self.uu[idx]     = 0
+                self.is_far[idx] = False
+        else:
+            r_min = np.min(dd)
+
+
+        self.src_solver = src_solver    = EikonalSolver()
+        src_solver.mode                 = 'spherical'
+        src_solver.vgrid.min_coords     = r_min, theta_min, phi_min
+        src_solver.vgrid.node_intervals = dr, np.pi/10, np.pi/10
+        src_solver.vgrid.npts           = 10, ntheta, nphi
+
+        # Map the nearfield vgrid coordinates to the farfield
+        # coordinate system.
+        if 0 in self.iax_null:
+            xx = np.full(src_solver.vgrid.npts, self.vgrid.min_coords[0])
+        else:
+            xx = src_solver.vgrid[..., 0]\
+                * np.sin(src_solver.vgrid[..., 1])\
+                * np.cos(src_solver.vgrid[..., 2])\
+                + self.src_loc[0]
+        if 1 in self.iax_null:
+            yy = np.full(src_solver.vgrid.npts, self.vgrid.min_coords[1])
+        else:
+            yy = src_solver.vgrid[..., 0]\
+                * np.sin(src_solver.vgrid[..., 1])\
+                * np.sin(src_solver.vgrid[..., 2])\
+                + self.src_loc[1]
+        if 2 in self.iax_null:
+            zz = np.full(src_solver.vgrid.npts, self.vgrid.min_coords[2])
+        else:
+            zz = src_solver.vgrid[..., 0]\
+                * np.cos(src_solver.vgrid[..., 1])\
+                + self.src_loc[2]
+        xyz = np.moveaxis(np.stack([xx,yy,zz]), 0, -1)
+
+        def decorate(func):
+            def wrapper(*args):
+                try:
+                    return (func(*args))
+                except Exception:
+                    return (0)
+            return (wrapper)
+
+        # Interpolate the velocity model onto the nearfield vgrid.
+        vvi = decorate(LinearInterpolator3D(self.vgrid, self.vv).interpolate)
+        src_solver.vv = np.apply_along_axis(vvi, -1, xyz)
+
+        # Initialize the first layer of nearfield pgrid nodes.
+        for it in range(src_solver.pgrid.npts[1]):
+            for ip in range(src_solver.pgrid.npts[2]):
+                idx = (0, it, ip)
+                src_solver.close.append(idx)
+                src_solver.is_far[idx]   = False
+                src_solver.is_alive[idx] = True
+                if src_solver.vv[idx] != 0:
+                    src_solver.uu[idx] = r_min / src_solver.vv[idx]
+
+        # Update the solver.
+        src_solver._update()
+        self.src_solver = src_solver
+
+        # Transfer travel times from the nearfield grid to the farfield grid
+        xyz = self.pgrid[...] - self.src_loc
+        
+        rr = np.sqrt(np.sum(np.square(xyz), axis=3))
+
+        # Temporarily ignore divide by zero errors. A divide-by-zeros 
+        # occurs when the source lies directly on a farfield pgrid
+        # node.
+        old = np.seterr(divide='ignore', invalid='ignore')
+        tt = np.arccos(xyz[...,2] / rr)
+        np.seterr(**old)
+
+        pp = np.mod(np.arctan2(xyz[...,1], xyz[...,0]), 2 * np.pi)
+
+        rtp = np.moveaxis(np.stack([rr, tt, pp]), 0, -1)
+
+        uui = LinearInterpolator3D(src_solver.pgrid, src_solver.uu).interpolate
+
+        for idx in np.argwhere(
+             (np.abs(rr) <= src_solver.pgrid.max_coords[0])
+            &(np.abs(rr) >= src_solver.pgrid.min_coords[0])
+        ):
+            idx = tuple(idx)
+            self.close.append(idx)
+            self.is_far[idx]   = False
+            self.is_alive[idx] = True
+            u = uui(rtp[idx])
+            if not np.isnan(u):
+                self.uu[idx] = u
+
+        self._update()
 
 
     def _trace_ray_euler(self, start, tolerance=1e-2):
@@ -254,6 +361,38 @@ class EikonalSolver(object):
             ray_np[i, 2] = ray[i][2]
             free(ray[i])
         return (ray_np)
+
+
+    def _update(self):
+        '''
+        Update travel-time grid.
+        '''
+        cdef cpp_vector[Index3D] close
+        cdef Index3D             idx
+        cdef Py_ssize_t          i
+
+        # Initialization
+        for i1, i2, i3 in self.close:
+            idx.i1, idx.i2, idx.i3 = i1, i2, i3
+            heap_push(close, self.uu, idx)
+        if hasattr(self, '_vvp'):
+            del(self._vvp)
+            
+        errors = update(
+            self.uu,
+            self.vvp,
+            self.is_alive,
+            close,
+            self.is_far,
+            self.pgrid.node_intervals,
+            self.norm
+        )
+
+        self.errors = {'denominator': errors[0], 'determinant': errors[1]}
+
+        # Clean-up
+        self._close = []
+        del(self._vvp)
 
 
 class GridND(object):
@@ -527,9 +666,10 @@ cdef tuple update(
         _REAL_t[:,:,:] uu,
         _REAL_t[:,:,:] vv,
         np.ndarray[np.npy_bool, ndim=3, cast=True] is_alive,
-        cpp_vector[Index3D] close,
+        cpp_vector[Index3D] &close,
         np.ndarray[np.npy_bool, ndim=3, cast=True] is_far,
         _REAL_t[:] dd,
+        _REAL_t[:,:,:,:] norm
 ):
     '''The update algorithm to propagate the wavefront.'''
     cdef Py_ssize_t       i, iax, idrxn, trial_i1, trial_i2, trial_i3
