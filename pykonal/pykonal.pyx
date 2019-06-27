@@ -178,30 +178,31 @@ class EikonalSolver(object):
         del(self._vvp)
 
 
-    def trace_ray(self, *args, method='euler', tolerance=1e-2):
+    def trace_ray(self, *args, method='euler'):
         if method.upper() == 'EULER':
-            return (self._trace_ray_euler(*args, tolerance=tolerance))
+            return (self._trace_ray_euler(*args))
         else:
             raise (NotImplementedError('Only Euler integration is implemented yet'))
 
 
-    def _trace_ray_euler(self, start, tolerance=1e-2):
+    def _trace_ray_euler(self, start):
         cdef cpp_vector[_REAL_t *]       ray
-        cdef _REAL_t                     step_size
+        cdef _REAL_t                     step_size, gx, gy, gz, norm
         cdef _REAL_t                     *point_new
-        cdef _REAL_t[3]                  point_last
-        cdef Py_ssize_t                i
+        cdef _REAL_t[3]                  point_last, point_2last
+        cdef Py_ssize_t                  i
         cdef np.ndarray[_REAL_t, ndim=2] ray_np
 
         point_new = <_REAL_t *> malloc(3 * sizeof(_REAL_t))
         point_new[0], point_new[1], point_new[2] = start
         ray.push_back(point_new)
+        # step_size <-- half the smallest node_interval
         step_size = np.min(
             [
                 self.pgrid.node_intervals[iax]
                 for iax in range(self.ndim) if iax not in self.iax_null
             ]
-        )
+        ) / 2
         # Create an interpolator for the gradient field
         gg = np.moveaxis(
             np.stack(
@@ -228,15 +229,25 @@ class EikonalSolver(object):
         # Create an interpolator for the travel-time field
         uu = LinearInterpolator3D(self.pgrid, self.uu)
         point_last   = ray.back()
-        while uu.interpolate(point_last) > tolerance:
+        while True:
+            gx   = grad_x.interpolate(point_last)
+            gy   = grad_y.interpolate(point_last)
+            gz   = grad_z.interpolate(point_last)
+            norm = libc.math.sqrt(gx**2 + gy**2 + gz**2)
+            gx  /= norm
+            gy  /= norm
+            gz  /= norm
             point_new = <_REAL_t *> malloc(3 * sizeof(_REAL_t))
-            point_new[0] = point_last[0] - step_size * grad_x.interpolate(point_last)
-            point_new[1] = point_last[1] - step_size * grad_y.interpolate(point_last)
-            point_new[2] = point_last[2] - step_size * grad_z.interpolate(point_last)
+            point_new[0] = point_last[0] - step_size * gx
+            point_new[1] = point_last[1] - step_size * gy
+            point_new[2] = point_last[2] - step_size * gz
+            point_2last = ray.back()
             ray.push_back(point_new)
             point_last   = ray.back()
-        ray_np = np.zeros((ray.size(), 3), dtype=DTYPE_REAL)
-        for i in range(ray.size()):
+            if uu.interpolate(point_2last) <= uu.interpolate(point_last):
+                break
+        ray_np = np.zeros((ray.size()-1, 3), dtype=DTYPE_REAL)
+        for i in range(ray.size()-1):
             ray_np[i, 0] = ray[i][0]
             ray_np[i, 1] = ray[i][1]
             ray_np[i, 2] = ray[i][2]
