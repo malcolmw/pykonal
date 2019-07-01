@@ -273,7 +273,7 @@ class EikonalSolver(object):
 
         # Transfer travel times from the nearfield grid to the farfield grid
         xyz = self.pgrid[...] - self.src_loc
-        
+
         rr = np.sqrt(np.sum(np.square(xyz), axis=3))
 
         # Temporarily ignore divide by zero errors. A divide-by-zeros 
@@ -294,12 +294,12 @@ class EikonalSolver(object):
             &(np.abs(rr) >= src_solver.pgrid.min_coords[0])
         ):
             idx = tuple(idx)
-            self.close.append(idx)
-            self.is_far[idx]   = False
-            self.is_alive[idx] = True
             u = uui(rtp[idx])
             if not np.isnan(u):
                 self.uu[idx] = u
+                self.close.append(idx)
+                self.is_far[idx]   = False
+                self.is_alive[idx] = True
 
         self._update()
 
@@ -388,7 +388,7 @@ class EikonalSolver(object):
             heap_push(close, self.uu, idx)
         if hasattr(self, '_vvp'):
             del(self._vvp)
-            
+
         errors = update(
             self.uu,
             self.vvp,
