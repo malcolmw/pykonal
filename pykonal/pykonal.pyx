@@ -186,6 +186,161 @@ class EikonalSolver(object):
             raise (NotImplementedError('Only Euler integration is implemented yet'))
 
 
+    def _solve_near_field(self):
+        if not hasattr(self, '_src_loc'):
+            raise (AttributeError('Source is unspecified.'))
+
+
+        # Solve in the nearfield using spherical coordinates
+        if self.mode == 'hybrid-cartesian':
+            dr                = np.min(self.pgrid.node_intervals)
+            theta_min, ntheta = (0, 11) if 2 not in self.iax_null else (np.pi/2, 1)
+            phi_min, nphi     = (0, 21) if 1 not in self.iax_null else (0, 1)
+        elif self.mode == 'hybrid-spherical':
+            dr                = self.pgrid.node_intervals[0] / 5
+            theta_min, ntheta = (0, 11) if 1 not in self.iax_null else (np.pi/2, 1)
+            phi_min, nphi     = (0, 21) if 2 not in self.iax_null else (0, 1)
+
+
+        # Calculate the distance from the source to each node in the
+        # farfield pgrid.
+        if self.mode == 'hybrid-cartesian':
+            dd = np.sqrt(np.sum(np.square(self.pgrid[...] - self.src_loc), axis=-1))
+        elif self.mode == 'hybrid-spherical':
+            dd = np.sqrt(
+                  np.square(self.pgrid[:,:,:,0])
+                + np.square(self.src_loc[0])
+                - 2 * self.pgrid[:,:,:,0] * self.src_loc[0] * (
+                    np.sin(self.pgrid[:,:,:,1]) * np.sin(self.src_loc[1]) * (
+                          np.cos(self.pgrid[:,:,:,2])*np.cos(self.src_loc[2])
+                        + np.sin(self.pgrid[:,:,:,2])*np.sin(self.src_loc[2])
+                    )
+                  + np.cos(self.pgrid[:,:,:,1]) * np.cos(self.src_loc[1])
+                )
+            )
+        # If the source lies directly on a node, the first layer of
+        # nodes in the nearfield pgrid coincide with farfield nodes one
+        # index away. Otherwise, the first layer of nodes coincides
+        # with the nearest node.
+        if np.any(dd == 0):
+            r_min = dr
+            for idx in np.argwhere(dd == 0):
+                idx = tuple(idx)
+                self.close.append(idx)
+                self.uu[idx]     = 0
+                self.is_far[idx] = False
+        else:
+            r_min = np.min(dd)
+
+
+        self.src_solver = src_solver    = EikonalSolver()
+        src_solver.mode                 = 'spherical'
+        src_solver.vgrid.min_coords     = r_min, theta_min, phi_min
+        src_solver.vgrid.node_intervals = dr, np.pi/10, np.pi/10
+        src_solver.vgrid.npts           = 10, ntheta, nphi
+
+        # Map the nearfield vgrid coordinates to the farfield
+        # coordinate system.
+        if 0 in self.iax_null:
+            xx_near = np.full(src_solver.vgrid.npts, self.vgrid.min_coords[0])
+        else:
+            xx_near = src_solver.vgrid[..., 0]\
+                * np.sin(src_solver.vgrid[..., 1])\
+                * np.cos(src_solver.vgrid[..., 2])\
+                + self.src_loc[0]
+        if 1 in self.iax_null:
+            yy_near = np.full(src_solver.vgrid.npts, self.vgrid.min_coords[1])
+        else:
+            yy_near = src_solver.vgrid[..., 0]\
+                * np.sin(src_solver.vgrid[..., 1])\
+                * np.sin(src_solver.vgrid[..., 2])\
+                + self.src_loc[1]
+        if 2 in self.iax_null:
+            zz_near = np.full(src_solver.vgrid.npts, self.vgrid.min_coords[2])
+        else:
+            zz_near = src_solver.vgrid[..., 0]\
+                * np.cos(src_solver.vgrid[..., 1])\
+                + self.src_loc[2]
+
+        xyz_near = np.moveaxis(np.stack([xx_near,yy_near,zz_near]), 0, -1)
+
+        if self.mode == 'hybrid-spherical':
+            rr_near = np.sqrt(np.sum(np.square(xyz_near), axis=3))
+
+            # Temporarily ignore divide by zero errors. A divide-by-zeros 
+            # occurs when the source lies directly on a farfield pgrid
+            # node.
+            old = np.seterr(divide='ignore', invalid='ignore')
+            tt_near = np.arccos(xyz_near[...,2] / rr)
+            np.seterr(**old)
+
+            pp_near = np.mod(np.arctan2(xyz_near[...,1], xyz_near[...,0]), 2 * np.pi)
+
+            icoords_near = np.moveaxis(np.stack([rr_near, tt_near, pp_near]), 0, -1)
+        else:
+            icoords_near = xyz_near
+
+        def decorate(func):
+            def wrapper(*args):
+                try:
+                    return (func(*args))
+                except Exception:
+                    return (0)
+            return (wrapper)
+
+        # Interpolate the velocity model onto the nearfield vgrid.
+        vvi = decorate(LinearInterpolator3D(self.vgrid, self.vv).interpolate)
+        src_solver.vv = np.apply_along_axis(vvi, -1, icoords_near)
+
+        # Initialize the first layer of nearfield pgrid nodes.
+        for it in range(src_solver.pgrid.npts[1]):
+            for ip in range(src_solver.pgrid.npts[2]):
+                idx = (0, it, ip)
+                src_solver.close.append(idx)
+                src_solver.is_far[idx]   = False
+                src_solver.is_alive[idx] = True
+                if src_solver.vv[idx] != 0:
+                    src_solver.uu[idx] = r_min / src_solver.vv[idx]
+
+        # Update the solver.
+        src_solver._update()
+        self.src_solver = src_solver
+
+################## Continue here
+
+        # Transfer travel times from the nearfield grid to the farfield grid
+        xyz = self.pgrid[...] - self.src_loc
+
+        rr = np.sqrt(np.sum(np.square(xyz), axis=3))
+
+        # Temporarily ignore divide by zero errors. A divide-by-zeros 
+        # occurs when the source lies directly on a farfield pgrid
+        # node.
+        old = np.seterr(divide='ignore', invalid='ignore')
+        tt = np.arccos(xyz[...,2] / rr)
+        np.seterr(**old)
+
+        pp = np.mod(np.arctan2(xyz[...,1], xyz[...,0]), 2 * np.pi)
+
+        rtp = np.moveaxis(np.stack([rr, tt, pp]), 0, -1)
+
+        uui = LinearInterpolator3D(src_solver.pgrid, src_solver.uu).interpolate
+
+        for idx in np.argwhere(
+             (np.abs(rr) <= src_solver.pgrid.max_coords[0])
+            &(np.abs(rr) >= src_solver.pgrid.min_coords[0])
+        ):
+            idx = tuple(idx)
+            u = uui(rtp[idx])
+            if not np.isnan(u):
+                self.uu[idx] = u
+                self.close.append(idx)
+                self.is_far[idx]   = False
+                self.is_alive[idx] = True
+
+        self._update()
+
+
     def _solve_hybrid_cartesian(self):
         if not hasattr(self, '_src_loc'):
             raise (AttributeError('Source is unspecified.'))
