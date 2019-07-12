@@ -124,7 +124,7 @@ class EikonalSolver(object):
         else:
             r = np.sqrt(np.sum(np.square(self.src_loc)))
             t = np.arccos(self.src_loc[2] / r)
-            p = np.mod(np.arctan2(self.src_loc[1], self.src_loc[0]), 2 * np.pi)
+            p = np.arctan2(self.src_loc[1], self.src_loc[0])
             return (np.array([r, t, p], dtype=DTYPE_REAL))
 
     @property
@@ -284,7 +284,7 @@ class EikonalSolver(object):
             tt_near = np.arccos(xyz_near[...,2] / rr_near)
             np.seterr(**old)
 
-            pp_near = np.mod(np.arctan2(xyz_near[...,1], xyz_near[...,0]), 2 * np.pi)
+            pp_near = np.arctan2(xyz_near[...,1], xyz_near[...,0])
 
             icoords_near = np.moveaxis(np.stack([rr_near, tt_near, pp_near]), 0, -1)
         else:
@@ -341,7 +341,7 @@ class EikonalSolver(object):
         tt_far = np.arccos(xyz_far[...,2] / rr_far)
         np.seterr(**old)
 
-        pp_far = np.mod(np.arctan2(xyz_far[...,1], xyz_far[...,0]), 2 * np.pi)
+        pp_far = np.arctan2(xyz_far[...,1], xyz_far[...,0])
 
         rtp_far = np.moveaxis(np.stack([rr_far, tt_far, pp_far]), 0, -1)
 
