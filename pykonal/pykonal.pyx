@@ -1,7 +1,7 @@
-# cython: boundscheck=False
-# cython: cdivision=True
-# cython: language_level=3
-# distutils: language = c++
+# cython:    boundscheck=False
+# cython:    cdivision=True
+# cython:    language_level=3
+# distutils: language=c++
 
 # Python imports
 import collections
