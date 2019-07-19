@@ -924,9 +924,9 @@ cdef tuple update(
                 b = bb[0] + bb[1] + bb[2]
                 c = cc[0] + cc[1] + cc[2] - 1/vv[nbr[0], nbr[1], nbr[2]]**2
                 if b ** 2 < 4 * a * c:
-                    if -b / (2 * a) < uu[nbr[0], nbr[1], nbr[2]]:
-                        # This may not be mathematically permissible
-                        new = -b / (2 * a)
+                    #if -b / (2 * a) < uu[nbr[0], nbr[1], nbr[2]]:
+                    #    # This may not be mathematically permissible
+                    #    new = -b / (2 * a)
                     count_b += 1
                 else:
                     new = (-b + libc.math.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
