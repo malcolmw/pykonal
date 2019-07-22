@@ -596,7 +596,14 @@ cdef class LinearInterpolator3D(object):
         cdef Py_ssize_t      i1, i2, i3, iax, di1, di2, di3
 
         for iax in range(3):
-            if point[iax] < self._min_coords[iax] or point[iax] > self._max_coords[iax]:
+            if (
+                    point[iax] < self._min_coords[iax]
+                    and not np.isclose(point[iax], self._min_coords[iax])
+
+            ) or (
+                    point[iax] > self._max_coords[iax]
+                    and not np.isclose(point[iax], self._max_coords[iax])
+            ):
                 raise(
                     OutOfBoundsError(
                         f'Point outside of interpolation domain requested: ({point[0]}, {point[1]}, {point[2]})'
