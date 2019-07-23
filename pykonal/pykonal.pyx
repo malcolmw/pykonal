@@ -34,14 +34,14 @@ class OutOfBoundsError(Exception):
 
 
 class EikonalSolver(object):
-    def __init__(self):
+    def __init__(self, coord_sys='cartesian'):
         '''
         Solves the Eikonal equation in 3D cartesian coordinates.
         '''
-        self._ndim    = 3
-        self._class   = str(self.__class__).strip('>\'').split('.')[-1]
-        self._vgrid   = GridND(ndim=self._ndim)
-        self._mode    = 'cartesian'
+        self._ndim      = 3
+        self._class     = str(self.__class__).strip('>\'').split('.')[-1]
+        self._coord_sys = coord_sys
+        self._vgrid     = GridND(ndim=self._ndim, coord_sys=self.coord_sys)
 
     @property
     def close(self):
@@ -66,15 +66,15 @@ class EikonalSolver(object):
         return (self._is_far)
 
     @property
-    def mode(self):
-        return (self._mode)
+    def coord_sys(self):
+        return (self._coord_sys)
 
-    @mode.setter
-    def mode(self, value):
+    @coord_sys.setter
+    def coord_sys(self, value):
         value = value.lower()
-        if value not in ('hybrid-cartesian', 'hybrid-spherical', 'cartesian', 'spherical'):
-            raise (ValueError(f'Invalid mode specification: {value}'))
-        self._mode = value
+        if value not in ('cartesian', 'spherical'):
+            raise (ValueError(f'Invalid coord_sys specification: {value}'))
+        self._coord_sys = value
 
 
     @property
@@ -88,7 +88,7 @@ class EikonalSolver(object):
                 self.pgrid.node_intervals,
                 np.append(self.pgrid.npts, 1)
             ).astype(DTYPE_REAL)
-            if self.mode in ('spherical', 'hybrid-spherical'):
+            if self.coord_sys == 'spherical':
                 self._norm[..., 1] *= self.pgrid[..., 0]
                 self._norm[..., 2] *= self.pgrid[..., 0] \
                     * np.sin(self.pgrid[..., 1])
@@ -97,7 +97,7 @@ class EikonalSolver(object):
     @property
     def pgrid(self):
         if not hasattr(self, '_pgrid'):
-            self._pgrid = GridND(ndim=self._ndim)
+            self._pgrid = GridND(ndim=self._ndim, coord_sys=self.vgrid.coord_sys)
             for attr in ('min_coords', 'node_intervals', 'npts'):
                 setattr(self._pgrid, attr, getattr(self.vgrid, attr))
         return (self._pgrid)
@@ -119,7 +119,7 @@ class EikonalSolver(object):
 
     @property
     def src_rtp(self):
-        if self.mode in ('spherical', 'hybrid-spherical'):
+        if self.coord_sys == 'spherical':
             return (self.src_loc)
         else:
             r = np.sqrt(np.sum(np.square(self.src_loc)))
@@ -129,7 +129,7 @@ class EikonalSolver(object):
 
     @property
     def src_xyz(self):
-        if self.mode in ('cartesian', 'hybrid-cartesian'):
+        if self.coord_sys == 'cartesian':
             return (self.src_loc)
         else:
             x = self.src_loc[0] * np.sin(self.src_loc[1]) * np.cos(self.src_loc[2])
@@ -180,21 +180,14 @@ class EikonalSolver(object):
                 for i2 in range(self.pgrid.npts[1]):
                     for i3 in range(self.pgrid.npts[2]):
                         vvp[i1, i2, i3] = vi(pgrid[i1, i2, i3])
-            if np.any(np.isnan(vvp))\
-                    or np.any(np.isinf(vvp))\
-            :
+            if np.any(np.isinf(vvp)):
                 raise (ValueError('Velocity model corrupted on interpolationg.'))
             self._vvp = vvp
         return (self._vvp)
 
 
     def solve(self):
-        if self.mode in ('hybrid-cartesian', 'hybrid-spherical'):
-            self._solve_hybrid()
-        elif self.mode in ('cartesian', 'spherical'):
-            self._update()
-        else:
-            raise (ValueError('Invalid mode specification. This should never happen.'))
+        self._update()
 
 
     def trace_ray(self, *args, method='euler', tolerance=1e-2):
@@ -204,163 +197,196 @@ class EikonalSolver(object):
             raise (NotImplementedError('Only Euler integration is implemented yet'))
 
 
-    def _solve_hybrid(self):
-        if not hasattr(self, '_src_loc'):
-            raise (AttributeError('Source is unspecified.'))
+    def transfer_travel_times_from(self, old, origin, rotate=False, set_alive=False):
+        '''
+        Transfer the velocity model from old EikonalSolver to self
+        :param pykonal.EikonalSolver old: The old EikonalSolver to transfer from.
+        :param tuple old_origin: The coordinates of the origin of old w.r.t. to the self frame of reference.
+        '''
+
+        pgrid_new = self.pgrid.map_to(old.coord_sys, origin, rotate=rotate)
+        if old.coord_sys == 'spherical' and old.pgrid.min_coords[2] >= 0:
+            pgrid_new[...,2] = np.mod(pgrid_new[...,2], 2*np.pi)
+        uui = return_nan_on_error(LinearInterpolator3D(old.pgrid, old.uu))
+
+        shape = pgrid_new.shape
+        for i1 in range(shape[0]):
+            for i2 in range(shape[1]):
+                for i3 in range(shape[2]):
+                    idx = (i1, i2, i3)
+                    u = uui(pgrid_new[idx])
+                    if not np.isnan(u):
+                        self.uu[idx]       = u
+                        self.is_far[idx]   = False
+                        self.is_alive[idx] = set_alive
+                        self.close.append(idx)
 
 
-        # Solve in the nearfield using spherical coordinates
-        if self.mode == 'hybrid-cartesian':
-            dr, nr            = np.min(self.pgrid.node_intervals), 10
-            theta_min, ntheta = (0, 11) if 2 not in self.iax_null else (np.pi/2, 1)
-            phi_min, nphi     = (0, 21) if 1 not in self.iax_null else (0, 1)
-        elif self.mode == 'hybrid-spherical':
-            dr, nr            = self.pgrid.node_intervals[0] / 5, 25
-            theta_min, ntheta = (0, 11) if 1 not in self.iax_null else (np.pi/2, 1)
-            phi_min, nphi     = (0, 21) if 2 not in self.iax_null else (0, 1)
+    def transfer_velocity_from(self, old, origin, rotate=False):
+        '''
+        Transfer the velocity model from old EikonalSolver to self
+        :param pykonal.EikonalSolver old: The old EikonalSolver to transfer from.
+        :param tuple old_origin: The coordinates of the origin of old w.r.t. to the self frame of reference.
+        '''
+
+        vgrid_new = self.vgrid.map_to(old.coord_sys, origin, rotate=rotate)
+        if old.coord_sys == 'spherical' and old.vgrid.min_coords[2] >= 0:
+            vgrid_new[...,2] = np.mod(vgrid_new[...,2], 2*np.pi)
+        vvi = return_nan_on_error(LinearInterpolator3D(old.vgrid, old.vv))
+        self.vv = np.apply_along_axis(vvi, -1, vgrid_new)
 
 
-        # Calculate the distance from the source to each node in the
-        # farfield pgrid.
-        if self.mode == 'hybrid-cartesian':
-            dd = np.sqrt(np.sum(np.square(self.pgrid[...] - self.src_xyz), axis=-1))
-        elif self.mode == 'hybrid-spherical':
-            dd = np.sqrt(
-                  np.square(self.pgrid[:,:,:,0])
-                + np.square(self.src_rtp[0])
-                - 2 * self.pgrid[:,:,:,0] * self.src_rtp[0] * (
-                    np.sin(self.pgrid[:,:,:,1]) * np.sin(self.src_rtp[1]) * (
-                          np.cos(self.pgrid[:,:,:,2])*np.cos(self.src_rtp[2])
-                        + np.sin(self.pgrid[:,:,:,2])*np.sin(self.src_rtp[2])
-                    )
-                  + np.cos(self.pgrid[:,:,:,1]) * np.cos(self.src_rtp[1])
-                )
-            )
-        # If the source lies directly on a node, the first layer of
-        # nodes in the nearfield pgrid coincide with farfield nodes one
-        # index away. Otherwise, the first layer of nodes coincides
-        # with the nearest node.
-        if np.any(dd == 0):
-            r_min = dr
-            for idx in np.argwhere(dd == 0):
-                idx = tuple(idx)
-                self.close.append(idx)
-                self.uu[idx]     = 0
-                self.is_far[idx] = False
-        else:
-            r_min = np.min(dd)
+
+    #def _solve_hybrid(self):
+    #    if not hasattr(self, '_src_loc'):
+    #        raise (AttributeError('Source is unspecified.'))
 
 
-        self.near_field = near_field    = EikonalSolver()
-        near_field.mode                 = 'spherical'
-        near_field.vgrid.min_coords     = r_min, theta_min, phi_min
-        near_field.vgrid.node_intervals = dr, np.pi/10, np.pi/10
-        near_field.vgrid.npts           = nr, ntheta, nphi
+    #    # Solve in the nearfield using spherical coordinates
+    #    if self.coord_sys == 'hybrid-cartesian':
+    #        dr, nr            = np.min(self.pgrid.node_intervals), 10
+    #        theta_min, ntheta = (0, 11) if 2 not in self.iax_null else (np.pi/2, 1)
+    #        phi_min, nphi     = (0, 21) if 1 not in self.iax_null else (0, 1)
+    #    elif self.coord_sys == 'hybrid-spherical':
+    #        dr, nr            = self.pgrid.node_intervals[0] / 5, 25
+    #        theta_min, ntheta = (0, 11) if 1 not in self.iax_null else (np.pi/2, 1)
+    #        phi_min, nphi     = (0, 21) if 2 not in self.iax_null else (0, 1)
 
-        # Map the nearfield vgrid coordinates to the farfield
-        # coordinate system.
-        xx_near = near_field.vgrid[..., 0]\
-            * np.sin(near_field.vgrid[..., 1])\
-            * np.cos(near_field.vgrid[..., 2])\
-            + self.src_xyz[0]
-        yy_near = near_field.vgrid[..., 0]\
-            * np.sin(near_field.vgrid[..., 1])\
-            * np.sin(near_field.vgrid[..., 2])\
-            + self.src_xyz[1]
-        zz_near = near_field.vgrid[..., 0]\
-            * np.cos(near_field.vgrid[..., 1])\
-            + self.src_xyz[2]
-        xyz_near = np.moveaxis(np.stack([xx_near,yy_near,zz_near]), 0, -1)
 
-        if self.mode == 'hybrid-spherical':
-            rr_near = np.sqrt(np.sum(np.square(xyz_near), axis=3))
+    #    # Calculate the distance from the source to each node in the
+    #    # farfield pgrid.
+    #    if self.coord_sys == 'hybrid-cartesian':
+    #        dd = np.sqrt(np.sum(np.square(self.pgrid[...] - self.src_xyz), axis=-1))
+    #    elif self.coord_sys == 'hybrid-spherical':
+    #        dd = np.sqrt(
+    #              np.square(self.pgrid[:,:,:,0])
+    #            + np.square(self.src_rtp[0])
+    #            - 2 * self.pgrid[:,:,:,0] * self.src_rtp[0] * (
+    #                np.sin(self.pgrid[:,:,:,1]) * np.sin(self.src_rtp[1]) * (
+    #                      np.cos(self.pgrid[:,:,:,2])*np.cos(self.src_rtp[2])
+    #                    + np.sin(self.pgrid[:,:,:,2])*np.sin(self.src_rtp[2])
+    #                )
+    #              + np.cos(self.pgrid[:,:,:,1]) * np.cos(self.src_rtp[1])
+    #            )
+    #        )
+    #    # If the source lies directly on a node, the first layer of
+    #    # nodes in the nearfield pgrid coincide with farfield nodes one
+    #    # index away. Otherwise, the first layer of nodes coincides
+    #    # with the nearest node.
+    #    if np.any(dd == 0):
+    #        r_min = dr
+    #        for idx in np.argwhere(dd == 0):
+    #            idx = tuple(idx)
+    #            self.close.append(idx)
+    #            self.uu[idx]     = 0
+    #            self.is_far[idx] = False
+    #    else:
+    #        r_min = np.min(dd)
 
-            # Temporarily ignore divide by zero errors. A divide-by-zeros 
-            # occurs when the source lies directly on a farfield pgrid
-            # node.
-            old = np.seterr(divide='ignore', invalid='ignore')
-            tt_near = np.arccos(xyz_near[...,2] / rr_near)
-            np.seterr(**old)
 
-            pp_near = np.arctan2(xyz_near[...,1], xyz_near[...,0])
+    #    self.near_field = near_field    = EikonalSolver()
+    #    near_field.coord_sys            = 'spherical'
+    #    near_field.vgrid.min_coords     = r_min, theta_min, phi_min
+    #    near_field.vgrid.node_intervals = dr, np.pi/10, np.pi/10
+    #    near_field.vgrid.npts           = nr, ntheta, nphi
 
-            icoords_near = np.moveaxis(np.stack([rr_near, tt_near, pp_near]), 0, -1)
-        else:
-            icoords_near = xyz_near
+    #    # Map the nearfield vgrid coordinates to the farfield
+    #    # coordinate system.
+    #    xx_near = near_field.vgrid[..., 0]\
+    #        * np.sin(near_field.vgrid[..., 1])\
+    #        * np.cos(near_field.vgrid[..., 2])\
+    #        + self.src_xyz[0]
+    #    yy_near = near_field.vgrid[..., 0]\
+    #        * np.sin(near_field.vgrid[..., 1])\
+    #        * np.sin(near_field.vgrid[..., 2])\
+    #        + self.src_xyz[1]
+    #    zz_near = near_field.vgrid[..., 0]\
+    #        * np.cos(near_field.vgrid[..., 1])\
+    #        + self.src_xyz[2]
+    #    xyz_near = np.moveaxis(np.stack([xx_near,yy_near,zz_near]), 0, -1)
 
-        def decorate(func, default):
-            def wrapper(*args):
-                try:
-                    return (func(*args))
-                except Exception:
-                    return (default)
-            return (wrapper)
+    #    if self.coord_sys == 'hybrid-spherical':
+    #        rr_near = np.sqrt(np.sum(np.square(xyz_near), axis=3))
 
-        # Interpolate the velocity model onto the nearfield vgrid.
-        vvi = decorate(LinearInterpolator3D(self.vgrid, self.vv).interpolate, 0)
-        near_field.vv = np.apply_along_axis(vvi, -1, icoords_near)
+    #        # Temporarily ignore divide by zero errors. A divide-by-zeros 
+    #        # occurs when the source lies directly on a farfield pgrid
+    #        # node.
+    #        old = np.seterr(divide='ignore', invalid='ignore')
+    #        tt_near = np.arccos(xyz_near[...,2] / rr_near)
+    #        np.seterr(**old)
 
-        # Initialize the first layer of nearfield pgrid nodes.
-        for it in range(near_field.pgrid.npts[1]):
-            for ip in range(near_field.pgrid.npts[2]):
-                idx = (0, it, ip)
-                near_field.close.append(idx)
-                near_field.is_far[idx]   = False
-                near_field.is_alive[idx] = True
-                if near_field.vv[idx] != 0:
-                    near_field.uu[idx] = r_min / near_field.vv[idx]
+    #        pp_near = np.arctan2(xyz_near[...,1], xyz_near[...,0])
 
-        # Update the solver.
-        near_field._update()
+    #        icoords_near = np.moveaxis(np.stack([rr_near, tt_near, pp_near]), 0, -1)
+    #    else:
+    #        icoords_near = xyz_near
 
-        # Transfer travel times from the nearfield grid to the farfield grid
-        if self.mode == 'hybrid-cartesian':
-            xyz_far = self.pgrid[...] - self.src_xyz
-        elif self.mode == 'hybrid-spherical':
-            xx_far = self.pgrid[..., 0]\
-                * np.sin(self.pgrid[..., 1])\
-                * np.cos(self.pgrid[..., 2])\
-                - self.src_xyz[0]
-            yy_far = self.pgrid[..., 0]\
-                * np.sin(self.pgrid[..., 1])\
-                * np.sin(self.pgrid[..., 2])\
-                - self.src_xyz[1]
-            zz_far = self.pgrid[..., 0]\
-                * np.cos(self.pgrid[..., 1])\
-                - self.src_xyz[2]
-            xyz_far = np.moveaxis(np.stack([xx_far,yy_far,zz_far]), 0, -1)
+    #    # Interpolate the velocity model onto the nearfield vgrid.
+    #    vvi = return_nan_on_error(
+    #        LinearInterpolator3D(self.vgrid, self.vv).interpolate
+    #    )
+    #    near_field.vv = np.apply_along_axis(vvi, -1, icoords_near)
 
-        rr_far = np.sqrt(np.sum(np.square(xyz_far), axis=3))
+    #    # Initialize the first layer of nearfield pgrid nodes.
+    #    for it in range(near_field.pgrid.npts[1]):
+    #        for ip in range(near_field.pgrid.npts[2]):
+    #            idx = (0, it, ip)
+    #            near_field.close.append(idx)
+    #            near_field.is_far[idx]   = False
+    #            near_field.is_alive[idx] = True
+    #            if near_field.vv[idx] != 0:
+    #                near_field.uu[idx] = r_min / near_field.vv[idx]
 
-        # Temporarily ignore divide by zero errors. A divide-by-zeros 
-        # occurs when the source lies directly on a farfield pgrid
-        # node.
-        old = np.seterr(divide='ignore', invalid='ignore')
-        tt_far = np.arccos(xyz_far[...,2] / rr_far)
-        np.seterr(**old)
+    #    # Update the solver.
+    #    near_field._update()
 
-        pp_far = np.arctan2(xyz_far[...,1], xyz_far[...,0])
+    #    # Transfer travel times from the nearfield grid to the farfield grid
+    #    if self.coord_sys == 'hybrid-cartesian':
+    #        xyz_far = self.pgrid[...] - self.src_xyz
+    #    elif self.coord_sys == 'hybrid-spherical':
+    #        xx_far = self.pgrid[..., 0]\
+    #            * np.sin(self.pgrid[..., 1])\
+    #            * np.cos(self.pgrid[..., 2])\
+    #            - self.src_xyz[0]
+    #        yy_far = self.pgrid[..., 0]\
+    #            * np.sin(self.pgrid[..., 1])\
+    #            * np.sin(self.pgrid[..., 2])\
+    #            - self.src_xyz[1]
+    #        zz_far = self.pgrid[..., 0]\
+    #            * np.cos(self.pgrid[..., 1])\
+    #            - self.src_xyz[2]
+    #        xyz_far = np.moveaxis(np.stack([xx_far,yy_far,zz_far]), 0, -1)
 
-        rtp_far = np.moveaxis(np.stack([rr_far, tt_far, pp_far]), 0, -1)
+    #    rr_far = np.sqrt(np.sum(np.square(xyz_far), axis=3))
 
-        uui = decorate(
-            LinearInterpolator3D(near_field.pgrid, near_field.uu).interpolate,
-            np.nan
-        )
+    #    # Temporarily ignore divide by zero errors. A divide-by-zeros 
+    #    # occurs when the source lies directly on a farfield pgrid
+    #    # node.
+    #    old = np.seterr(divide='ignore', invalid='ignore')
+    #    tt_far = np.arccos(xyz_far[...,2] / rr_far)
+    #    np.seterr(**old)
 
-        for idx in np.argwhere(
-             (np.abs(rr_far) <= near_field.pgrid.max_coords[0])
-            &(np.abs(rr_far) >= near_field.pgrid.min_coords[0])
-        ):
-            idx = tuple(idx)
-            u = uui(rtp_far[idx])
-            if not np.isnan(u):
-                self.uu[idx] = u
-                self.close.append(idx)
-                self.is_far[idx]   = False
-                self.is_alive[idx] = True
+    #    pp_far = np.arctan2(xyz_far[...,1], xyz_far[...,0])
 
-        self._update()
+    #    rtp_far = np.moveaxis(np.stack([rr_far, tt_far, pp_far]), 0, -1)
+
+    #    uui = return_nan_on_error(
+    #        LinearInterpolator3D(near_field.pgrid, near_field.uu).interpolate
+    #    )
+
+    #    for idx in np.argwhere(
+    #         (np.abs(rr_far) <= near_field.pgrid.max_coords[0])
+    #        &(np.abs(rr_far) >= near_field.pgrid.min_coords[0])
+    #    ):
+    #        idx = tuple(idx)
+    #        u = uui(rtp_far[idx])
+    #        if not np.isnan(u):
+    #            self.uu[idx] = u
+    #            self.close.append(idx)
+    #            self.is_far[idx]   = False
+    #            self.is_alive[idx] = True
+
+    #    self._update()
 
 
     def _trace_ray_euler(self, start):
@@ -447,7 +473,6 @@ class EikonalSolver(object):
             heap_push(close, self.uu, idx)
         if hasattr(self, '_vvp'):
             del(self._vvp)
-
         errors = update(
             self.uu,
             self.vvp,
@@ -466,11 +491,12 @@ class EikonalSolver(object):
 
 
 class GridND(object):
-    def __init__(self, ndim=3):
-        self._ndim = ndim
-        self._class = str(self.__class__).strip('>\'').split('.')[-1]
-        self._update = True
-        self._iax_null = None
+    def __init__(self, ndim=3, coord_sys='cartesian'):
+        self._ndim      = ndim
+        self._class     = str(self.__class__).strip('>\'').split('.')[-1]
+        self._update    = True
+        self._iax_null  = None
+        self._coord_sys = coord_sys
 
 
     @property
@@ -480,6 +506,10 @@ class GridND(object):
     @iax_null.setter
     def iax_null(self, value):
         self._iax_null = value
+
+    @property
+    def coord_sys(self):
+        return (self._coord_sys)
 
     @property
     def ndim(self):
@@ -558,6 +588,76 @@ class GridND(object):
         return (self._mesh)
 
 
+    def map_to(self, coord_sys, origin, rotate=False):
+        '''
+        Return the coordinates of self in the new reference frame.
+
+        :param pykonal.GridND self: Coordinate grid to transform.
+        :param str coord_sys: Coordinate system to transform to.
+        :param origin: Coordinates of the origin of self w.r.t. the new frame of reference.
+        '''
+        origin = np.array(origin)
+        if self.coord_sys == 'spherical' and coord_sys.lower() == 'spherical':
+            xx_old = self[...,0] * np.sin(self[...,1]) * np.cos(self[...,2])
+            yy_old = self[...,0] * np.sin(self[...,1]) * np.sin(self[...,2])
+            zz_old = self[...,0] * np.cos(self[...,1])
+            origin_xyz = [
+                origin[0] * np.sin(origin[1]) * np.cos(origin[2]),
+                origin[0] * np.sin(origin[1]) * np.sin(origin[2]),
+                origin[0] * np.cos(origin[1])
+            ]
+            xx_new  = xx_old + origin_xyz[0]
+            yy_new  = yy_old + origin_xyz[1]
+            zz_new  = zz_old + origin_xyz[2]
+            xyz_new = np.moveaxis(np.stack([xx_new,yy_new,zz_new]), 0, -1)
+
+            rr_new             = np.sqrt(np.sum(np.square(xyz_new), axis=-1))
+            old_error_settings = np.seterr(divide='ignore', invalid='ignore')
+            tt_new             = np.arccos(xyz_new[...,2] / rr_new)
+            np.seterr(**old_error_settings)
+            pp_new             = np.arctan2(xyz_new[...,1], xyz_new[...,0])
+            rtp_new            = np.moveaxis(
+                np.stack([rr_new, tt_new, pp_new]),
+                0,
+                -1
+            )
+            return (rtp_new)
+        elif self.coord_sys == 'cartesian' and coord_sys.lower() == 'spherical':
+            origin_xyz = [
+                origin[0] * np.sin(origin[1]) * np.cos(origin[2]),
+                origin[0] * np.sin(origin[1]) * np.sin(origin[2]),
+                origin[0] * np.cos(origin[1])
+            ]
+            if rotate is True:
+                xyz_old = self[...].dot(
+                    rotation_matrix(np.pi/2-origin[2], 0, np.pi/2-origin[1])
+                )
+            else:
+                xyz_old = self[...]
+            xyz_new            = xyz_old + origin_xyz
+            rr_new             = np.sqrt(np.sum(np.square(xyz_new), axis=-1))
+            old_error_settings = np.seterr(divide='ignore', invalid='ignore')
+            tt_new             = np.arccos(xyz_new[...,2] / rr_new)
+            np.seterr(**old_error_settings)
+            pp_new      = np.arctan2(xyz_new[...,1], xyz_new[...,0])
+            rtp_new = np.moveaxis(np.stack([rr_new,tt_new, pp_new]), 0, -1)
+            return (rtp_new)
+        elif self.coord_sys == 'spherical' and coord_sys.lower() == 'cartesian':
+            origin_xyz = origin
+            xx_old     = self[...,0] * np.sin(self[...,1]) * np.cos(self[...,2])
+            yy_old     = self[...,0] * np.sin(self[...,1]) * np.sin(self[...,2])
+            zz_old     = self[...,0] * np.cos(self[...,1])
+            xx_new     = xx_old + origin_xyz[0]
+            yy_new     = yy_old + origin_xyz[1]
+            zz_new     = zz_old + origin_xyz[2]
+            xyz_new    = np.moveaxis(np.stack([xx_new,yy_new,zz_new]), 0, -1)
+            return (xyz_new)
+        elif self.coord_sys == 'cartesian' and coord_sys.lower() == 'cartesian':
+            return (self[...] + origin)
+        else:
+            raise (NotImplementedError())
+
+
     def __getitem__(self, key):
         return (self.mesh[key])
 
@@ -611,12 +711,12 @@ cdef class LinearInterpolator3D(object):
                 )
             idx[iax] = (point[iax] - self._min_coords[iax]) / self._node_intervals[iax]
             delta[iax] = (idx[iax] % 1.) * self._node_intervals[iax]
-        i1 = <Py_ssize_t> idx[0]
-        i2 = <Py_ssize_t> idx[1]
-        i3 = <Py_ssize_t> idx[2]
-        di1 = 0 if self._iax_isnull[0] == 1 or i1 == self._max_idx[0] else 1
-        di2 = 0 if self._iax_isnull[1] == 1 or i2 == self._max_idx[1] else 1
-        di3 = 0 if self._iax_isnull[2] == 1 or i3 == self._max_idx[2] else 1
+        i1   = <Py_ssize_t> idx[0]
+        i2   = <Py_ssize_t> idx[1]
+        i3   = <Py_ssize_t> idx[2]
+        di1  = 0 if self._iax_isnull[0] == 1 or i1 == self._max_idx[0] else 1
+        di2  = 0 if self._iax_isnull[1] == 1 or i2 == self._max_idx[1] else 1
+        di3  = 0 if self._iax_isnull[2] == 1 or i3 == self._max_idx[2] else 1
         f000 = self._values[i1,     i2,     i3]
         f100 = self._values[i1+di1, i2,     i3]
         f110 = self._values[i1+di1, i2+di2, i3]
@@ -633,6 +733,44 @@ cdef class LinearInterpolator3D(object):
         f1   = f01  + (f11  - f01)  / self._node_intervals[1] * delta[1]
         f    = f0   + (f1   - f0)   / self._node_intervals[2] * delta[2]
         return (f)
+
+
+def return_nan_on_error(func):
+    def wrapper(*args):
+        try:
+            return (func(*args))
+        except Exception:
+            return (np.nan)
+    return (wrapper)
+
+def rotation_matrix(alpha, beta, gamma):
+    '''
+    Return the rotation matrix used to rotate a set of cartesian
+    coordinates by alpha radians about the z-axis, then beta radians
+    about the y'-axis and then gamma radians about the z''-axis.
+    '''
+    aa = np.array(
+        [
+            [np.cos(alpha), -np.sin(alpha), 0],
+            [np.sin(alpha),  np.cos(alpha), 0],
+            [0,              0,             1]
+        ]
+    )
+    bb = np.array(
+        [
+            [ np.cos(beta), 0, np.sin(beta)],
+            [ 0,            1, 0           ],
+            [-np.sin(beta), 0, np.cos(beta)]
+        ]
+    )
+    cc = np.array(
+        [
+            [np.cos(gamma), -np.sin(gamma), 0],
+            [np.sin(gamma),  np.cos(gamma), 0],
+            [0,               0,            1]
+        ]
+    )
+    return (aa.dot(bb).dot(cc))
 
 
 cdef Index3D heap_pop(cpp_vector[Index3D]& idxs, _REAL_t[:,:,:] uu):
@@ -800,7 +938,8 @@ cdef tuple update(
                 continue
             # Recompute the values of u at all Close neighbours of Trial
             # by solving the piecewise quadratic equation.
-            if vv[nbr[0], nbr[1], nbr[2]] > 0:
+            if vv[nbr[0], nbr[1], nbr[2]] > 0 \
+                    and not np.isnan(vv[nbr[0], nbr[1], nbr[2]]):
                 for iax in range(3):
                     switch = [0, 0, 0]
                     idrxn = 0
