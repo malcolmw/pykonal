@@ -909,12 +909,15 @@ cdef tuple update(
             for idrxn in range(2):
                 switch[iax] = drxns[idrxn]
                 for jax in range(3):
-                    nbrs[inbr][jax] = (
-                          trial_idx[jax]
-                        + switch[jax]
-                        + (max_idx[jax] + 1) * is_periodic[jax]
-                    )\
-                    % (max_idx[jax] + 1)
+                    if is_periodic[jax]:
+                        nbrs[inbr][jax] = (
+                              trial_idx[jax]
+                            + switch[jax]
+                            + max_idx[jax]
+                        )\
+                        % max_idx[jax]
+                    else:
+                        nbrs[inbr][jax] = trial_idx[jax] + switch[jax]
                 inbr += 1
 
         # Recompute the values of u at all Close neighbours of Trial
@@ -934,28 +937,26 @@ cdef tuple update(
                     idrxn = 0
                     for idrxn in range(2):
                         switch[iax] = drxns[idrxn]
+                        nbr1_i1 = nbr[0]+switch[0] if not is_periodic[0] else (nbr[0]+switch[0]+max_idx[0]) % max_idx[0]
+                        nbr1_i2 = nbr[1]+switch[1] if not is_periodic[1] else (nbr[1]+switch[1]+max_idx[1]) % max_idx[1]
+                        nbr1_i3 = nbr[2]+switch[2] if not is_periodic[2] else (nbr[2]+switch[2]+max_idx[2]) % max_idx[2]
+                        nbr2_i1 = nbr[0]+2*switch[0] if not is_periodic[0] else (nbr[0]+2*switch[0]+max_idx[0]) % max_idx[0]
+                        nbr2_i2 = nbr[1]+2*switch[1] if not is_periodic[1] else (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1]
+                        nbr2_i3 = nbr[2]+2*switch[2] if not is_periodic[2] else (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2]
                         if (
                                    (drxns[idrxn] == -1 and nbr[iax] > 1)
                                 or (drxns[idrxn] == 1 and nbr[iax] < max_idx[iax] - 2)
                         )\
                                 and is_alive[
-                                    nbr[0]+2*switch[0],
-                                    nbr[1]+2*switch[1],
-                                    nbr[2]+2*switch[2]
+                                        nbr2_i1, nbr2_i2, nbr2_i3
                                 ]\
                                 and is_alive[
-                                    nbr[0]+switch[0],
-                                    nbr[1]+switch[1],
-                                    nbr[2]+switch[2]
+                                        nbr1_i1, nbr1_i2, nbr1_i3
                                 ]\
                                 and uu[
-                                    nbr[0]+2*switch[0],
-                                    nbr[1]+2*switch[1],
-                                    nbr[2]+2*switch[2]
+                                        nbr2_i1, nbr2_i2, nbr2_i3
                                 ] <= uu[
-                                    nbr[0]+switch[0],
-                                    nbr[1]+switch[1],
-                                    nbr[2]+switch[2]
+                                        nbr1_i1, nbr1_i2, nbr1_i3
                                 ]\
                         :
                             order[idrxn] = 2
@@ -966,14 +967,10 @@ cdef tuple update(
                                   nbr[2]
                               ]\
                               + 4 * uu[
-                                  nbr[0]+switch[0],
-                                  nbr[1]+switch[1],
-                                  nbr[2]+switch[2]
+                                  nbr1_i1, nbr1_i2, nbr1_i3
                               ]\
                               -     uu[
-                                  nbr[0]+2*switch[0],
-                                  nbr[1]+2*switch[1],
-                                  nbr[2]+2*switch[2]
+                                  nbr2_i1, nbr2_i2, nbr2_i3
                               ]
                             ) / (2 * norm[nbr[0], nbr[1], nbr[2], iax])
                         elif (
@@ -981,17 +978,13 @@ cdef tuple update(
                                 or (drxns[idrxn] ==  1 and nbr[iax] < max_idx[iax] - 1)
                         )\
                                 and is_alive[
-                                    nbr[0]+switch[0],
-                                    nbr[1]+switch[1],
-                                    nbr[2]+switch[2]
+                                        nbr1_i1, nbr1_i2, nbr1_i3
                                 ]\
                         :
                             order[idrxn] = 1
                             fdu[idrxn] = drxns[idrxn] * (
                                 uu[
-                                    nbr[0]+switch[0],
-                                    nbr[1]+switch[1],
-                                    nbr[2]+switch[2]
+                                    nbr1_i1, nbr1_i2, nbr1_i3
                                 ]
                               - uu[nbr[0], nbr[1], nbr[2]]
                             ) / norm[nbr[0], nbr[1], nbr[2], iax]
@@ -1003,52 +996,42 @@ cdef tuple update(
                     else:
                         # Do the update using the forward operator
                         idrxn, switch[iax] = 1, 1
+                    nbr1_i1 = nbr[0]+switch[0] if not is_periodic[0] else (nbr[0]+switch[0]+max_idx[0]) % max_idx[0]
+                    nbr1_i2 = nbr[1]+switch[1] if not is_periodic[1] else (nbr[1]+switch[1]+max_idx[1]) % max_idx[1]
+                    nbr1_i3 = nbr[2]+switch[2] if not is_periodic[2] else (nbr[2]+switch[2]+max_idx[2]) % max_idx[2]
+                    nbr2_i1 = nbr[0]+2*switch[0] if not is_periodic[0] else (nbr[0]+2*switch[0]+max_idx[0]) % max_idx[0]
+                    nbr2_i2 = nbr[1]+2*switch[1] if not is_periodic[1] else (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1]
+                    nbr2_i3 = nbr[2]+2*switch[2] if not is_periodic[2] else (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2]
                     if order[idrxn] == 2:
                         aa[iax] = 9 / (4 * norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
                         bb[iax] = (
                             6 * uu[
-                                nbr[0]+2*switch[0],
-                                nbr[1]+2*switch[1],
-                                nbr[2]+2*switch[2]
+                                nbr2_i1, nbr2_i2, nbr2_i3
                             ]
                          - 24 * uu[
-                                nbr[0]+switch[0],
-                                nbr[1]+switch[1],
-                                nbr[2]+switch[2]
+                             nbr1_i1, nbr1_i2, nbr1_i3
                             ]
                         ) / (4 * norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
                         cc[iax] = (
                             uu[
-                                nbr[0]+2*switch[0],
-                                nbr[1]+2*switch[1],
-                                nbr[2]+2*switch[2]
+                                nbr2_i1, nbr2_i2, nbr2_i3
                             ]**2 \
                             - 8 * uu[
-                                nbr[0]+2*switch[0],
-                                nbr[1]+2*switch[1],
-                                nbr[2]+2*switch[2]
+                                nbr2_i1, nbr2_i2, nbr2_i3
                             ] * uu[
-                                nbr[0]+switch[0],
-                                nbr[1]+switch[1],
-                                nbr[2]+switch[2]
+                                nbr1_i1, nbr1_i2, nbr1_i3
                             ]
                             + 16 * uu[
-                                nbr[0]+switch[0],
-                                nbr[1]+switch[1],
-                                nbr[2]+switch[2]
+                                nbr1_i1, nbr1_i2, nbr1_i3
                             ]**2
                         ) / (4 * norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
                     elif order[idrxn] == 1:
                         aa[iax] = 1 / norm[nbr[0], nbr[1], nbr[2], iax] ** 2
                         bb[iax] = -2 * uu[
-                            nbr[0]+switch[0],
-                            nbr[1]+switch[1],
-                            nbr[2]+switch[2]
+                                nbr1_i1, nbr1_i2, nbr1_i3
                         ] / norm[nbr[0], nbr[1], nbr[2], iax] ** 2
                         cc[iax] = uu[
-                            nbr[0]+switch[0],
-                            nbr[1]+switch[1],
-                            nbr[2]+switch[2]
+                                nbr1_i1, nbr1_i2, nbr1_i3
                         ]**2 / norm[nbr[0], nbr[1], nbr[2], iax] ** 2
                     elif order[idrxn] == 0:
                         aa[iax], bb[iax], cc[iax] = 0, 0, 0
