@@ -937,55 +937,49 @@ cdef tuple update(
                     idrxn = 0
                     for idrxn in range(2):
                         switch[iax] = drxns[idrxn]
-                        nbr1_i1 = nbr[0]+switch[0] if not is_periodic[0] else (nbr[0]+switch[0]+max_idx[0]) % max_idx[0]
-                        nbr1_i2 = nbr[1]+switch[1] if not is_periodic[1] else (nbr[1]+switch[1]+max_idx[1]) % max_idx[1]
-                        nbr1_i3 = nbr[2]+switch[2] if not is_periodic[2] else (nbr[2]+switch[2]+max_idx[2]) % max_idx[2]
-                        nbr2_i1 = nbr[0]+2*switch[0] if not is_periodic[0] else (nbr[0]+2*switch[0]+max_idx[0]) % max_idx[0]
-                        nbr2_i2 = nbr[1]+2*switch[1] if not is_periodic[1] else (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1]
-                        nbr2_i3 = nbr[2]+2*switch[2] if not is_periodic[2] else (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2]
+                        nbr1_i1 = (nbr[0]+switch[0]+max_idx[0]) % max_idx[0] if is_periodic[0] else nbr[0]+switch[0]
+                        nbr1_i2 = (nbr[1]+switch[1]+max_idx[1]) % max_idx[1] if is_periodic[1] else nbr[1]+switch[1]
+                        nbr1_i3 = (nbr[2]+switch[2]+max_idx[2]) % max_idx[2] if is_periodic[2] else nbr[2]+switch[2]
+                        nbr2_i1 = (nbr[0]+2*switch[0]+max_idx[0]) % max_idx[0] if is_periodic[0] else nbr[0]+2*switch[0]
+                        nbr2_i2 = (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1] if is_periodic[1] else nbr[1]+2*switch[1]
+                        nbr2_i3 = (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2] if is_periodic[2] else nbr[2]+2*switch[2]
                         if (
-                                   (drxns[idrxn] == -1 and (nbr[iax] > 1 or is_periodic[iax]))
-                                or (drxns[idrxn] == 1 and (nbr[iax] < max_idx[iax] - 2 or is_periodic[iax]))
+                            (
+                               drxns[idrxn] == -1
+                               and (nbr[iax] > 1 or is_periodic[iax])
+                            )
+                            or
+                            (
+                                drxns[idrxn] == 1
+                                and (nbr[iax] < max_idx[iax] - 2 or is_periodic[iax])
+                            )
                         )\
-                                and is_alive[
-                                        nbr2_i1, nbr2_i2, nbr2_i3
-                                ]\
-                                and is_alive[
-                                        nbr1_i1, nbr1_i2, nbr1_i3
-                                ]\
-                                and uu[
-                                        nbr2_i1, nbr2_i2, nbr2_i3
-                                ] <= uu[
-                                        nbr1_i1, nbr1_i2, nbr1_i3
-                                ]\
+                            and is_alive[nbr2_i1, nbr2_i2, nbr2_i3]\
+                            and is_alive[nbr1_i1, nbr1_i2, nbr1_i3]\
+                            and uu[nbr2_i1, nbr2_i2, nbr2_i3] \
+                                <= uu[nbr1_i1, nbr1_i2, nbr1_i3]\
                         :
                             order[idrxn] = 2
                             fdu[idrxn]  = drxns[idrxn] * (
-                              - 3 * uu[
-                                  nbr[0],
-                                  nbr[1],
-                                  nbr[2]
-                              ]\
-                              + 4 * uu[
-                                  nbr1_i1, nbr1_i2, nbr1_i3
-                              ]\
-                              -     uu[
-                                  nbr2_i1, nbr2_i2, nbr2_i3
-                              ]
+                                - 3 * uu[nbr[0], nbr[1], nbr[2]]
+                                + 4 * uu[nbr1_i1, nbr1_i2, nbr1_i3]
+                                -     uu[nbr2_i1, nbr2_i2, nbr2_i3]
                             ) / (2 * norm[nbr[0], nbr[1], nbr[2], iax])
                         elif (
-                                   (drxns[idrxn] == -1 and (nbr[iax] > 0 or is_periodic[iax]))
-                                or (drxns[idrxn] ==  1 and (nbr[iax] < max_idx[iax] - 1 or is_periodic[iax]))
+                            (
+                                drxns[idrxn] == -1
+                                and (nbr[iax] > 0 or is_periodic[iax])
+                            )
+                            or (
+                                drxns[idrxn] ==  1
+                                and (nbr[iax] < max_idx[iax] - 1 or is_periodic[iax])
+                            )
                         )\
-                                and is_alive[
-                                        nbr1_i1, nbr1_i2, nbr1_i3
-                                ]\
+                            and is_alive[nbr1_i1, nbr1_i2, nbr1_i3]\
                         :
                             order[idrxn] = 1
                             fdu[idrxn] = drxns[idrxn] * (
-                                uu[
-                                    nbr1_i1, nbr1_i2, nbr1_i3
-                                ]
+                                uu[nbr1_i1, nbr1_i2, nbr1_i3]
                               - uu[nbr[0], nbr[1], nbr[2]]
                             ) / norm[nbr[0], nbr[1], nbr[2], iax]
                         else:
@@ -996,43 +990,30 @@ cdef tuple update(
                     else:
                         # Do the update using the forward operator
                         idrxn, switch[iax] = 1, 1
-                    nbr1_i1 = nbr[0]+switch[0] if not is_periodic[0] else (nbr[0]+switch[0]+max_idx[0]) % max_idx[0]
-                    nbr1_i2 = nbr[1]+switch[1] if not is_periodic[1] else (nbr[1]+switch[1]+max_idx[1]) % max_idx[1]
-                    nbr1_i3 = nbr[2]+switch[2] if not is_periodic[2] else (nbr[2]+switch[2]+max_idx[2]) % max_idx[2]
-                    nbr2_i1 = nbr[0]+2*switch[0] if not is_periodic[0] else (nbr[0]+2*switch[0]+max_idx[0]) % max_idx[0]
-                    nbr2_i2 = nbr[1]+2*switch[1] if not is_periodic[1] else (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1]
-                    nbr2_i3 = nbr[2]+2*switch[2] if not is_periodic[2] else (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2]
+                    nbr1_i1 = (nbr[0]+switch[0]+max_idx[0]) % max_idx[0] if is_periodic[0] else nbr[0]+switch[0]
+                    nbr1_i2 = (nbr[1]+switch[1]+max_idx[1]) % max_idx[1] if is_periodic[1] else nbr[1]+switch[1]
+                    nbr1_i3 = (nbr[2]+switch[2]+max_idx[2]) % max_idx[2] if is_periodic[2] else nbr[2]+switch[2]
+                    nbr2_i1 = (nbr[0]+2*switch[0]+max_idx[0]) % max_idx[0] if is_periodic[0] else nbr[0]+2*switch[0]
+                    nbr2_i2 = (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1] if is_periodic[1] else nbr[1]+2*switch[1]
+                    nbr2_i3 = (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2] if is_periodic[2] else nbr[2]+2*switch[2]
                     if order[idrxn] == 2:
                         aa[iax] = 9 / (4 * norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
                         bb[iax] = (
-                            6 * uu[
-                                nbr2_i1, nbr2_i2, nbr2_i3
-                            ]
-                         - 24 * uu[
-                             nbr1_i1, nbr1_i2, nbr1_i3
-                            ]
-                        ) / (4 * norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
+                            6 * uu[nbr2_i1, nbr2_i2, nbr2_i3]
+                         - 24 * uu[nbr1_i1, nbr1_i2, nbr1_i3]
+                        ) / (4 * norm[nbr[0], nbr[1], nbr[2], iax]**2)
                         cc[iax] = (
-                            uu[
-                                nbr2_i1, nbr2_i2, nbr2_i3
-                            ]**2 \
-                            - 8 * uu[
-                                nbr2_i1, nbr2_i2, nbr2_i3
-                            ] * uu[
-                                nbr1_i1, nbr1_i2, nbr1_i3
-                            ]
-                            + 16 * uu[
-                                nbr1_i1, nbr1_i2, nbr1_i3
-                            ]**2
-                        ) / (4 * norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
+                                   uu[nbr2_i1, nbr2_i2, nbr2_i3]**2 
+                            -  8 * uu[nbr2_i1, nbr2_i2, nbr2_i3] 
+                                 * uu[nbr1_i1, nbr1_i2, nbr1_i3]
+                            + 16 * uu[nbr1_i1, nbr1_i2, nbr1_i3]**2
+                        ) / (4 * norm[nbr[0], nbr[1], nbr[2], iax]**2)
                     elif order[idrxn] == 1:
-                        aa[iax] = 1 / norm[nbr[0], nbr[1], nbr[2], iax] ** 2
-                        bb[iax] = -2 * uu[
-                                nbr1_i1, nbr1_i2, nbr1_i3
-                        ] / norm[nbr[0], nbr[1], nbr[2], iax] ** 2
-                        cc[iax] = uu[
-                                nbr1_i1, nbr1_i2, nbr1_i3
-                        ]**2 / norm[nbr[0], nbr[1], nbr[2], iax] ** 2
+                        aa[iax] = 1 / norm[nbr[0], nbr[1], nbr[2], iax]**2
+                        bb[iax] = -2 * uu[nbr1_i1, nbr1_i2, nbr1_i3]\
+                            / norm[nbr[0], nbr[1], nbr[2], iax] ** 2
+                        cc[iax] = uu[nbr1_i1, nbr1_i2, nbr1_i3]**2\
+                            / norm[nbr[0], nbr[1], nbr[2], iax]**2
                     elif order[idrxn] == 0:
                         aa[iax], bb[iax], cc[iax] = 0, 0, 0
                 a = aa[0] + aa[1] + aa[2]
@@ -1048,7 +1029,7 @@ cdef tuple update(
                     new = (-b + libc.math.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
                 if new < uu[nbr[0], nbr[1], nbr[2]]:
                     uu[nbr[0], nbr[1], nbr[2]] = new
-                    close._sift_down(0, close.which(*nbr))#nbr[0], nbr[1], nbr[2]))
+                    close._sift_down(0, close.which(*nbr))
                     # Tag as Close all neighbours of Trial that are not
                     # Alive. If the neighbour is in Far, remove it from
                     # that list and add it to Close.
