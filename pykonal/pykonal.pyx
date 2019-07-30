@@ -937,12 +937,18 @@ cdef tuple update(
                     idrxn = 0
                     for idrxn in range(2):
                         switch[iax] = drxns[idrxn]
-                        nbr1_i1 = (nbr[0]+switch[0]+max_idx[0]) % max_idx[0] if is_periodic[0] else nbr[0]+switch[0]
-                        nbr1_i2 = (nbr[1]+switch[1]+max_idx[1]) % max_idx[1] if is_periodic[1] else nbr[1]+switch[1]
-                        nbr1_i3 = (nbr[2]+switch[2]+max_idx[2]) % max_idx[2] if is_periodic[2] else nbr[2]+switch[2]
-                        nbr2_i1 = (nbr[0]+2*switch[0]+max_idx[0]) % max_idx[0] if is_periodic[0] else nbr[0]+2*switch[0]
-                        nbr2_i2 = (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1] if is_periodic[1] else nbr[1]+2*switch[1]
-                        nbr2_i3 = (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2] if is_periodic[2] else nbr[2]+2*switch[2]
+                        nbr1_i1 = (nbr[0]+switch[0]+max_idx[0]) % max_idx[0]\
+                            if is_periodic[0] else nbr[0]+switch[0]
+                        nbr1_i2 = (nbr[1]+switch[1]+max_idx[1]) % max_idx[1]\
+                            if is_periodic[1] else nbr[1]+switch[1]
+                        nbr1_i3 = (nbr[2]+switch[2]+max_idx[2]) % max_idx[2]\
+                            if is_periodic[2] else nbr[2]+switch[2]
+                        nbr2_i1 = (nbr[0]+2*switch[0]+max_idx[0]) % max_idx[0]\
+                            if is_periodic[0] else nbr[0]+2*switch[0]
+                        nbr2_i2 = (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1]\
+                            if is_periodic[1] else nbr[1]+2*switch[1]
+                        nbr2_i3 = (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2]\
+                            if is_periodic[2] else nbr[2]+2*switch[2]
                         if (
                             (
                                drxns[idrxn] == -1
@@ -990,12 +996,18 @@ cdef tuple update(
                     else:
                         # Do the update using the forward operator
                         idrxn, switch[iax] = 1, 1
-                    nbr1_i1 = (nbr[0]+switch[0]+max_idx[0]) % max_idx[0] if is_periodic[0] else nbr[0]+switch[0]
-                    nbr1_i2 = (nbr[1]+switch[1]+max_idx[1]) % max_idx[1] if is_periodic[1] else nbr[1]+switch[1]
-                    nbr1_i3 = (nbr[2]+switch[2]+max_idx[2]) % max_idx[2] if is_periodic[2] else nbr[2]+switch[2]
-                    nbr2_i1 = (nbr[0]+2*switch[0]+max_idx[0]) % max_idx[0] if is_periodic[0] else nbr[0]+2*switch[0]
-                    nbr2_i2 = (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1] if is_periodic[1] else nbr[1]+2*switch[1]
-                    nbr2_i3 = (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2] if is_periodic[2] else nbr[2]+2*switch[2]
+                    nbr1_i1 = (nbr[0]+switch[0]+max_idx[0]) % max_idx[0]\
+                        if is_periodic[0] else nbr[0]+switch[0]
+                    nbr1_i2 = (nbr[1]+switch[1]+max_idx[1]) % max_idx[1]\
+                        if is_periodic[1] else nbr[1]+switch[1]
+                    nbr1_i3 = (nbr[2]+switch[2]+max_idx[2]) % max_idx[2]\
+                        if is_periodic[2] else nbr[2]+switch[2]
+                    nbr2_i1 = (nbr[0]+2*switch[0]+max_idx[0]) % max_idx[0]\
+                        if is_periodic[0] else nbr[0]+2*switch[0]
+                    nbr2_i2 = (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1]\
+                        if is_periodic[1] else nbr[1]+2*switch[1]
+                    nbr2_i3 = (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2]\
+                        if is_periodic[2] else nbr[2]+2*switch[2]
                     if order[idrxn] == 2:
                         aa[iax] = 9 / (4 * norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
                         bb[iax] = (
@@ -1026,7 +1038,7 @@ cdef tuple update(
                     count_b += 1
                     continue
                 else:
-                    new = (-b + libc.math.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
+                    new = (-b + libc.math.sqrt(b**2 - 4*a*c)) / (2*a)
                 if new < uu[nbr[0], nbr[1], nbr[2]]:
                     uu[nbr[0], nbr[1], nbr[2]] = new
                     close._sift_down(0, close.which(*nbr))
