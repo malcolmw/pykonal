@@ -944,8 +944,8 @@ cdef tuple update(
                         nbr2_i2 = nbr[1]+2*switch[1] if not is_periodic[1] else (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1]
                         nbr2_i3 = nbr[2]+2*switch[2] if not is_periodic[2] else (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2]
                         if (
-                                   (drxns[idrxn] == -1 and nbr[iax] > 1)
-                                or (drxns[idrxn] == 1 and nbr[iax] < max_idx[iax] - 2)
+                                   (drxns[idrxn] == -1 and (nbr[iax] > 1 or is_periodic[iax]))
+                                or (drxns[idrxn] == 1 and (nbr[iax] < max_idx[iax] - 2 or is_periodic[iax]))
                         )\
                                 and is_alive[
                                         nbr2_i1, nbr2_i2, nbr2_i3
@@ -974,8 +974,8 @@ cdef tuple update(
                               ]
                             ) / (2 * norm[nbr[0], nbr[1], nbr[2], iax])
                         elif (
-                                   (drxns[idrxn] == -1 and nbr[iax] > 0)
-                                or (drxns[idrxn] ==  1 and nbr[iax] < max_idx[iax] - 1)
+                                   (drxns[idrxn] == -1 and (nbr[iax] > 0 or is_periodic[iax]))
+                                or (drxns[idrxn] ==  1 and (nbr[iax] < max_idx[iax] - 1 or is_periodic[iax]))
                         )\
                                 and is_alive[
                                         nbr1_i1, nbr1_i2, nbr1_i3
