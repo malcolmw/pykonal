@@ -46,7 +46,7 @@ class EikonalSolver(object):
     @property
     def close(self):
         if not hasattr(self, '_close'):
-            self._close = []
+            self._close = Heap(self.uu)
         return (self._close)
 
     @property
@@ -219,7 +219,7 @@ class EikonalSolver(object):
                         self.uu[idx]       = u
                         self.is_far[idx]   = False
                         self.is_alive[idx] = set_alive
-                        self.close.append(idx)
+                        self.close.push(*idx)
 
 
     def transfer_velocity_from(self, old, origin, rotate=False):
@@ -234,159 +234,6 @@ class EikonalSolver(object):
             vgrid_new[...,2] = np.mod(vgrid_new[...,2], 2*np.pi)
         vvi = return_nan_on_error(LinearInterpolator3D(old.vgrid, old.vv))
         self.vv = np.apply_along_axis(vvi, -1, vgrid_new)
-
-
-
-    #def _solve_hybrid(self):
-    #    if not hasattr(self, '_src_loc'):
-    #        raise (AttributeError('Source is unspecified.'))
-
-
-    #    # Solve in the nearfield using spherical coordinates
-    #    if self.coord_sys == 'hybrid-cartesian':
-    #        dr, nr            = np.min(self.pgrid.node_intervals), 10
-    #        theta_min, ntheta = (0, 11) if 2 not in self.iax_null else (np.pi/2, 1)
-    #        phi_min, nphi     = (0, 21) if 1 not in self.iax_null else (0, 1)
-    #    elif self.coord_sys == 'hybrid-spherical':
-    #        dr, nr            = self.pgrid.node_intervals[0] / 5, 25
-    #        theta_min, ntheta = (0, 11) if 1 not in self.iax_null else (np.pi/2, 1)
-    #        phi_min, nphi     = (0, 21) if 2 not in self.iax_null else (0, 1)
-
-
-    #    # Calculate the distance from the source to each node in the
-    #    # farfield pgrid.
-    #    if self.coord_sys == 'hybrid-cartesian':
-    #        dd = np.sqrt(np.sum(np.square(self.pgrid[...] - self.src_xyz), axis=-1))
-    #    elif self.coord_sys == 'hybrid-spherical':
-    #        dd = np.sqrt(
-    #              np.square(self.pgrid[:,:,:,0])
-    #            + np.square(self.src_rtp[0])
-    #            - 2 * self.pgrid[:,:,:,0] * self.src_rtp[0] * (
-    #                np.sin(self.pgrid[:,:,:,1]) * np.sin(self.src_rtp[1]) * (
-    #                      np.cos(self.pgrid[:,:,:,2])*np.cos(self.src_rtp[2])
-    #                    + np.sin(self.pgrid[:,:,:,2])*np.sin(self.src_rtp[2])
-    #                )
-    #              + np.cos(self.pgrid[:,:,:,1]) * np.cos(self.src_rtp[1])
-    #            )
-    #        )
-    #    # If the source lies directly on a node, the first layer of
-    #    # nodes in the nearfield pgrid coincide with farfield nodes one
-    #    # index away. Otherwise, the first layer of nodes coincides
-    #    # with the nearest node.
-    #    if np.any(dd == 0):
-    #        r_min = dr
-    #        for idx in np.argwhere(dd == 0):
-    #            idx = tuple(idx)
-    #            self.close.append(idx)
-    #            self.uu[idx]     = 0
-    #            self.is_far[idx] = False
-    #    else:
-    #        r_min = np.min(dd)
-
-
-    #    self.near_field = near_field    = EikonalSolver()
-    #    near_field.coord_sys            = 'spherical'
-    #    near_field.vgrid.min_coords     = r_min, theta_min, phi_min
-    #    near_field.vgrid.node_intervals = dr, np.pi/10, np.pi/10
-    #    near_field.vgrid.npts           = nr, ntheta, nphi
-
-    #    # Map the nearfield vgrid coordinates to the farfield
-    #    # coordinate system.
-    #    xx_near = near_field.vgrid[..., 0]\
-    #        * np.sin(near_field.vgrid[..., 1])\
-    #        * np.cos(near_field.vgrid[..., 2])\
-    #        + self.src_xyz[0]
-    #    yy_near = near_field.vgrid[..., 0]\
-    #        * np.sin(near_field.vgrid[..., 1])\
-    #        * np.sin(near_field.vgrid[..., 2])\
-    #        + self.src_xyz[1]
-    #    zz_near = near_field.vgrid[..., 0]\
-    #        * np.cos(near_field.vgrid[..., 1])\
-    #        + self.src_xyz[2]
-    #    xyz_near = np.moveaxis(np.stack([xx_near,yy_near,zz_near]), 0, -1)
-
-    #    if self.coord_sys == 'hybrid-spherical':
-    #        rr_near = np.sqrt(np.sum(np.square(xyz_near), axis=3))
-
-    #        # Temporarily ignore divide by zero errors. A divide-by-zeros 
-    #        # occurs when the source lies directly on a farfield pgrid
-    #        # node.
-    #        old = np.seterr(divide='ignore', invalid='ignore')
-    #        tt_near = np.arccos(xyz_near[...,2] / rr_near)
-    #        np.seterr(**old)
-
-    #        pp_near = np.arctan2(xyz_near[...,1], xyz_near[...,0])
-
-    #        icoords_near = np.moveaxis(np.stack([rr_near, tt_near, pp_near]), 0, -1)
-    #    else:
-    #        icoords_near = xyz_near
-
-    #    # Interpolate the velocity model onto the nearfield vgrid.
-    #    vvi = return_nan_on_error(
-    #        LinearInterpolator3D(self.vgrid, self.vv).interpolate
-    #    )
-    #    near_field.vv = np.apply_along_axis(vvi, -1, icoords_near)
-
-    #    # Initialize the first layer of nearfield pgrid nodes.
-    #    for it in range(near_field.pgrid.npts[1]):
-    #        for ip in range(near_field.pgrid.npts[2]):
-    #            idx = (0, it, ip)
-    #            near_field.close.append(idx)
-    #            near_field.is_far[idx]   = False
-    #            near_field.is_alive[idx] = True
-    #            if near_field.vv[idx] != 0:
-    #                near_field.uu[idx] = r_min / near_field.vv[idx]
-
-    #    # Update the solver.
-    #    near_field._update()
-
-    #    # Transfer travel times from the nearfield grid to the farfield grid
-    #    if self.coord_sys == 'hybrid-cartesian':
-    #        xyz_far = self.pgrid[...] - self.src_xyz
-    #    elif self.coord_sys == 'hybrid-spherical':
-    #        xx_far = self.pgrid[..., 0]\
-    #            * np.sin(self.pgrid[..., 1])\
-    #            * np.cos(self.pgrid[..., 2])\
-    #            - self.src_xyz[0]
-    #        yy_far = self.pgrid[..., 0]\
-    #            * np.sin(self.pgrid[..., 1])\
-    #            * np.sin(self.pgrid[..., 2])\
-    #            - self.src_xyz[1]
-    #        zz_far = self.pgrid[..., 0]\
-    #            * np.cos(self.pgrid[..., 1])\
-    #            - self.src_xyz[2]
-    #        xyz_far = np.moveaxis(np.stack([xx_far,yy_far,zz_far]), 0, -1)
-
-    #    rr_far = np.sqrt(np.sum(np.square(xyz_far), axis=3))
-
-    #    # Temporarily ignore divide by zero errors. A divide-by-zeros 
-    #    # occurs when the source lies directly on a farfield pgrid
-    #    # node.
-    #    old = np.seterr(divide='ignore', invalid='ignore')
-    #    tt_far = np.arccos(xyz_far[...,2] / rr_far)
-    #    np.seterr(**old)
-
-    #    pp_far = np.arctan2(xyz_far[...,1], xyz_far[...,0])
-
-    #    rtp_far = np.moveaxis(np.stack([rr_far, tt_far, pp_far]), 0, -1)
-
-    #    uui = return_nan_on_error(
-    #        LinearInterpolator3D(near_field.pgrid, near_field.uu).interpolate
-    #    )
-
-    #    for idx in np.argwhere(
-    #         (np.abs(rr_far) <= near_field.pgrid.max_coords[0])
-    #        &(np.abs(rr_far) >= near_field.pgrid.min_coords[0])
-    #    ):
-    #        idx = tuple(idx)
-    #        u = uui(rtp_far[idx])
-    #        if not np.isnan(u):
-    #            self.uu[idx] = u
-    #            self.close.append(idx)
-    #            self.is_far[idx]   = False
-    #            self.is_alive[idx] = True
-
-    #    self._update()
 
 
     def _trace_ray_euler(self, start):
@@ -463,21 +310,17 @@ class EikonalSolver(object):
         '''
         Update travel-time grid.
         '''
-        cdef cpp_vector[Index3D] close
         cdef Index3D             idx
         cdef Py_ssize_t          i
 
         # Initialization
-        for i1, i2, i3 in self.close:
-            idx.i1, idx.i2, idx.i3 = i1, i2, i3
-            heap_push(close, self.uu, idx)
         if hasattr(self, '_vvp'):
             del(self._vvp)
         errors = update(
             self.uu,
             self.vvp,
             self.is_alive,
-            close,
+            self.close,
             self.is_far,
             self.pgrid.node_intervals,
             self.norm
@@ -486,7 +329,6 @@ class EikonalSolver(object):
         self.errors = {'denominator': errors[0], 'determinant': errors[1]}
 
         # Clean-up
-        self._close = []
         del(self._vvp)
 
 
@@ -662,6 +504,151 @@ class GridND(object):
         return (self.mesh[key])
 
 
+cdef class Heap(object):
+    cdef cpp_vector[Index3D] _keys
+    cdef _REAL_t[:,:,:]      _values
+
+    def __init__(self, values):
+        self._values = values
+
+    @property
+    def values(self):
+        return (np.asarray(self._values))
+
+    @values.setter
+    def values(self, values):
+        self._values = values
+
+    @property
+    def keys(self):
+        cdef Index3D idx
+        output = []
+        for i in range(self._keys.size()):
+            idx = self._keys[i]
+            output.append((idx.i1, idx.i2, idx.i3))
+        return (output)
+
+    @property
+    def size(self):
+        return (self._keys.size())
+
+
+    cpdef tuple pop(Heap self):
+        '''
+        Pop the smallest item off the heap, maintaining the heap invariant.
+        '''
+        cdef Index3D last, idx_return
+
+        last = self._keys.back()
+        self._keys.pop_back()
+        if self._keys.size() > 0:
+            idx_return = self._keys[0]
+            self._keys[0] = last
+            self._sift_up(0)
+            return ((idx_return.i1, idx_return.i2, idx_return.i3))
+        return ((last.i1, last.i2, last.i3))
+
+    cpdef void push(Heap self, Py_ssize_t i1, Py_ssize_t i2, Py_ssize_t i3):
+        '''
+        Push item onto heap, maintaining the heap invariant.
+        '''
+        cdef Index3D idx
+        idx.i1, idx.i2, idx.i3 = i1, i2, i3
+        self._keys.push_back(idx)
+        self._sift_down(0, self._keys.size()-1)
+
+
+    cpdef void sift_down(Heap self, Py_ssize_t j_start, Py_ssize_t j):
+        '''
+        Doc string
+        '''
+        cdef Py_ssize_t j_parent
+        cdef Index3D    idx_new, idx_parent
+
+        idx_new = self._keys[j]
+        # Follow the path to the root, moving parents down until finding a place
+        # newitem fits.
+        while j > j_start:
+            j_parent = (j - 1) >> 1
+            idx_parent = self._keys[j_parent]
+            if self._values[idx_new.i1, idx_new.i2, idx_new.i3] < self._values[idx_parent.i1, idx_parent.i2, idx_parent.i3]:
+                self._keys[j] = idx_parent
+                j = j_parent
+                continue
+            break
+        self._keys[j] = idx_new
+
+    cdef void _sift_down(Heap self, Py_ssize_t j_start, Py_ssize_t j):
+        '''
+        Doc string
+        '''
+        cdef Py_ssize_t j_parent
+        cdef Index3D    idx_new, idx_parent
+
+        idx_new = self._keys[j]
+        # Follow the path to the root, moving parents down until finding a place
+        # newitem fits.
+        while j > j_start:
+            j_parent = (j - 1) >> 1
+            idx_parent = self._keys[j_parent]
+            if self._values[idx_new.i1, idx_new.i2, idx_new.i3] < self._values[idx_parent.i1, idx_parent.i2, idx_parent.i3]:
+                self._keys[j] = idx_parent
+                j = j_parent
+                continue
+            break
+        self._keys[j] = idx_new
+
+
+    cpdef void _sift_up(Heap self, Py_ssize_t j_start):
+        '''
+        Doc string
+        '''
+        cdef Py_ssize_t j, j_child, j_end, j_right
+        cdef Index3D idx_child, idx_right, idx_new
+
+        j_end = self._keys.size()
+        j = j_start
+        idx_new = self._keys[j_start]
+        # Bubble up the smaller child until hitting a leaf.
+        j_child = 2 * j_start + 1 # leftmost child position
+        while j_child < j_end:
+            # Set childpos to index of smaller child.
+            j_right = j_child + 1
+            idx_child, idx_right = self._keys[j_child], self._keys[j_right]
+            if j_right < j_end and not self._values[idx_child.i1, idx_child.i2, idx_child.i3] < self._values[idx_right.i1, idx_right.i2, idx_right.i3]:
+                j_child = j_right
+            # Move the smaller child up.
+            self._keys[j] = self._keys[j_child]
+            j = j_child
+            j_child = 2 * j + 1
+        # The leaf at pos is empty now.  Put newitem there, and bubble it up
+        # to its final resting place (by sifting its parents down).
+        self._keys[j] = idx_new
+        self._sift_down(j_start, j)
+
+
+    cpdef Py_ssize_t which(Heap self, Py_ssize_t i1, Py_ssize_t i2, Py_ssize_t i3):
+        cdef int     i
+        cdef Index3D idx
+        for i in range(self._keys.size()):
+            idx = self._keys[i]
+            if (idx.i1, idx.i2, idx.i3) == (i1, i2, i3):
+                return (i)
+        return (-1)
+
+    cpdef to_list(self):
+        cdef list    output
+        cdef list    keys
+        output = []
+        keys   = self.keys
+
+        for i in range(self._keys.size()):
+            key = self.pop()
+            output.append(key)
+        for key in keys:
+            self.push(*key)
+        return (output)
+
 cdef class LinearInterpolator3D(object):
     cdef _REAL_t[:,:,:,:] _grid
     cdef _REAL_t[:,:,:]   _values
@@ -774,7 +761,9 @@ def rotation_matrix(alpha, beta, gamma):
 
 
 cdef Index3D heap_pop(cpp_vector[Index3D]& idxs, _REAL_t[:,:,:] uu):
-    '''Pop the smallest item off the heap, maintaining the heap invariant.'''
+    '''
+    Pop the smallest item off the heap, maintaining the heap invariant.
+    '''
     cdef Index3D last, idx_return
 
     last = idxs.back()
@@ -788,24 +777,11 @@ cdef Index3D heap_pop(cpp_vector[Index3D]& idxs, _REAL_t[:,:,:] uu):
 
 
 cdef void heap_push(cpp_vector[Index3D]& idxs, _REAL_t[:,:,:] uu, Index3D idx):
-    '''Push item onto heap, maintaining the heap invariant.'''
+    '''
+    Push item onto heap, maintaining the heap invariant.
+    '''
     idxs.push_back(idx)
     sift_down(idxs, uu, 0, idxs.size()-1)
-
-
-cdef void init_sources(
-    list sources,
-    _REAL_t[:,:,:] uu,
-    cpp_vector[Index3D]& close,
-    np.ndarray[np.npy_bool, ndim=3, cast=True] is_far
-):
-    cdef Index3D idx
-
-    for source in sources:
-        idx.i1, idx.i2, idx.i3 = source[0][0], source[0][1], source[0][2]
-        uu[idx.i1, idx.i2, idx.i3] = source[1]
-        is_far[idx.i1, idx.i2, idx.i3] = False
-        heap_push(close, uu, idx)
 
 
 cdef void sift_down(
@@ -814,7 +790,9 @@ cdef void sift_down(
     Py_ssize_t j_start,
     Py_ssize_t j
 ):
-    '''Doc string'''
+    '''
+    Doc string
+    '''
     cdef Py_ssize_t j_parent
     cdef Index3D idx_new, idx_parent
 
@@ -837,7 +815,9 @@ cdef void sift_up(
     _REAL_t[:,:,:] uu,
     Py_ssize_t j_start
 ):
-    '''Doc string'''
+    '''
+    Doc string
+    '''
     cdef Py_ssize_t j, j_child, j_end, j_right
     cdef Index3D idx_child, idx_right, idx_new
 
@@ -861,6 +841,14 @@ cdef void sift_up(
     idxs[j] = idx_new
     sift_down(idxs, uu, j_start, j)
 
+
+cdef void heapify(
+    cpp_vector[Index3D]& idxs,
+    _REAL_t[:,:,:] uu
+):
+    for j_start in reversed(range(idxs.size()//2)):
+        sift_up(idxs, uu, j_start)
+
 cdef bint stencil(
     Py_ssize_t i1,
     Py_ssize_t i2,
@@ -883,51 +871,54 @@ cdef tuple update(
         _REAL_t[:,:,:] uu,
         _REAL_t[:,:,:] vv,
         np.ndarray[np.npy_bool, ndim=3, cast=True] is_alive,
-        cpp_vector[Index3D] &close,
+        Heap close,
         np.ndarray[np.npy_bool, ndim=3, cast=True] is_far,
         _REAL_t[:] dd,
         _REAL_t[:,:,:,:] norm
 ):
-    '''The update algorithm to propagate the wavefront.'''
+    '''
+    The update algorithm to propagate the wavefront.
+    '''
     cdef Py_ssize_t       i, iax, idrxn, trial_i1, trial_i2, trial_i3
     cdef Py_ssize_t[6][3] nbrs
-    cdef Py_ssize_t[3]    max_idx, nbr, switch
+    cdef Py_ssize_t[3]    trial_idx, max_idx, nbr, switch
     cdef Py_ssize_t[2]    drxns = [-1, 1]
-    cdef Index3D          trial_idx, idx
+    cdef Index3D          idx
     cdef int              count_a = 0
     cdef int              count_b = 0
+    cdef int              inbr
     cdef int[2]           order
+    cdef int[3]           is_periodic
     cdef _REAL_t          a, b, c, bfd, ffd, new
     cdef _REAL_t[2]       fdu
     cdef _REAL_t[3]       aa, bb, cc
 
-
+    is_periodic   = False, False, True
     max_idx       = [is_alive.shape[0], is_alive.shape[1], is_alive.shape[2]]
 
-    while close.size() > 0:
+    while close.size > 0:
         # Let Trial be the point in Close with the smallest value of u
-        trial_idx = heap_pop(close, uu)
-        trial_i1, trial_i2, trial_i3 = trial_idx.i1, trial_idx.i2, trial_idx.i3
+        trial_i1, trial_i2, trial_i3 = close.pop()
+        trial_idx = [trial_i1, trial_i2, trial_i3]
         is_alive[trial_i1, trial_i2, trial_i3] = True
 
-        nbrs[0][0] = trial_i1 - 1
-        nbrs[0][1] = trial_i2
-        nbrs[0][2] = trial_i3
-        nbrs[1][0] = trial_i1 + 1
-        nbrs[1][1] = trial_i2
-        nbrs[1][2] = trial_i3
-        nbrs[2][0] = trial_i1
-        nbrs[2][1] = trial_i2 - 1
-        nbrs[2][2] = trial_i3
-        nbrs[3][0] = trial_i1
-        nbrs[3][1] = trial_i2 + 1
-        nbrs[3][2] = trial_i3
-        nbrs[4][0] = trial_i1
-        nbrs[4][1] = trial_i2
-        nbrs[4][2] = trial_i3 - 1
-        nbrs[5][0] = trial_i1
-        nbrs[5][1] = trial_i2
-        nbrs[5][2] = trial_i3 + 1
+        # Determine the indices of neighbouring nodes.
+        inbr = 0
+        for iax in range(3):
+            switch = [0, 0, 0]
+            for idrxn in range(2):
+                switch[iax] = drxns[idrxn]
+                for jax in range(3):
+                    nbrs[inbr][jax] = (
+                          trial_idx[jax]
+                        + switch[jax]
+                        + (max_idx[jax] + 1) * is_periodic[jax]
+                    )\
+                    % (max_idx[jax] + 1)
+                inbr += 1
+
+        # Recompute the values of u at all Close neighbours of Trial
+        # by solving the piecewise quadratic equation.
         for i in range(6):
             nbr_i1 = nbrs[i][0]
             nbr_i2 = nbrs[i][1]
@@ -936,8 +927,6 @@ cdef tuple update(
             if not stencil(nbr[0], nbr[1], nbr[2], max_idx[0], max_idx[1], max_idx[2]) \
                     or is_alive[nbr[0], nbr[1], nbr[2]]:
                 continue
-            # Recompute the values of u at all Close neighbours of Trial
-            # by solving the piecewise quadratic equation.
             if vv[nbr[0], nbr[1], nbr[2]] > 0 \
                     and not np.isnan(vv[nbr[0], nbr[1], nbr[2]]):
                 for iax in range(3):
@@ -1070,19 +1059,17 @@ cdef tuple update(
                 b = bb[0] + bb[1] + bb[2]
                 c = cc[0] + cc[1] + cc[2] - 1/vv[nbr[0], nbr[1], nbr[2]]**2
                 if b ** 2 < 4 * a * c:
-                    #if -b / (2 * a) < uu[nbr[0], nbr[1], nbr[2]]:
-                    #    # This may not be mathematically permissible
-                    #    new = -b / (2 * a)
                     count_b += 1
+                    continue
                 else:
                     new = (-b + libc.math.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
                 if new < uu[nbr[0], nbr[1], nbr[2]]:
                     uu[nbr[0], nbr[1], nbr[2]] = new
-            # Tag as Close all neighbours of Trial that are not Alive
-            # If the neighbour is in Far, remove it from that list and add it to
-            # Close
-            if is_far[nbr[0], nbr[1], nbr[2]]:
-                idx.i1, idx.i2, idx.i3 = nbr_i1, nbr_i2, nbr_i3
-                heap_push(close, uu, idx)
-                is_far[nbr[0], nbr[1], nbr[2]] = False
+                    close._sift_down(0, close.which(*nbr))#nbr[0], nbr[1], nbr[2]))
+                    # Tag as Close all neighbours of Trial that are not
+                    # Alive. If the neighbour is in Far, remove it from
+                    # that list and add it to Close.
+                    if is_far[nbr[0], nbr[1], nbr[2]]:
+                        close.push(nbr[0], nbr[1], nbr[2])
+                        is_far[nbr[0], nbr[1], nbr[2]] = False
     return (count_a, count_b)
