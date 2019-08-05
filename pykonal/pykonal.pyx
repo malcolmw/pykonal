@@ -519,17 +519,16 @@ class GridND(object):
 cdef class Heap(object):
     cdef cpp_vector[Index3D] _keys
     cdef _REAL_t[:,:,:]      _values
+    cdef Py_ssize_t[:,:,:]   _heap_index
 
     def __init__(self, values):
-        self._values = values
+        self._values     = values
+        self._heap_index = np.full(values.shape, fill_value=-1)
+
 
     @property
-    def values(self):
-        return (np.asarray(self._values))
-
-    @values.setter
-    def values(self, values):
-        self._values = values
+    def heap_index(self):
+        return (np.asarray(self._heap_index))
 
     @property
     def keys(self):
@@ -544,6 +543,14 @@ cdef class Heap(object):
     def size(self):
         return (self._keys.size())
 
+    @property
+    def values(self):
+        return (np.asarray(self._values))
+
+    @values.setter
+    def values(self, values):
+        self._values = values
+
 
     cpdef tuple pop(Heap self):
         '''
@@ -553,9 +560,12 @@ cdef class Heap(object):
 
         last = self._keys.back()
         self._keys.pop_back()
+        self._heap_index[last.i1, last.i2, last.i3] = -1
         if self._keys.size() > 0:
             idx_return = self._keys[0]
+            self._heap_index[idx_return.i1, idx_return.i2, idx_return.i3] = -1
             self._keys[0] = last
+            self._heap_index[last.i1, last.i2, last.i3] = 0
             self._sift_up(0)
             return ((idx_return.i1, idx_return.i2, idx_return.i3))
         return ((last.i1, last.i2, last.i3))
@@ -567,6 +577,7 @@ cdef class Heap(object):
         cdef Index3D idx
         idx.i1, idx.i2, idx.i3 = i1, i2, i3
         self._keys.push_back(idx)
+        self._heap_index[idx.i1, idx.i2, idx.i3] = self._keys.size()-1
         self._sift_down(0, self._keys.size()-1)
 
 
@@ -585,10 +596,12 @@ cdef class Heap(object):
             idx_parent = self._keys[j_parent]
             if self._values[idx_new.i1, idx_new.i2, idx_new.i3] < self._values[idx_parent.i1, idx_parent.i2, idx_parent.i3]:
                 self._keys[j] = idx_parent
+                self._heap_index[idx_parent.i1, idx_parent.i2, idx_parent.i3] = j
                 j = j_parent
                 continue
             break
         self._keys[j] = idx_new
+        self._heap_index[idx_new.i1, idx_new.i2, idx_new.i3] = j
 
     cdef void _sift_down(Heap self, Py_ssize_t j_start, Py_ssize_t j):
         '''
@@ -605,10 +618,12 @@ cdef class Heap(object):
             idx_parent = self._keys[j_parent]
             if self._values[idx_new.i1, idx_new.i2, idx_new.i3] < self._values[idx_parent.i1, idx_parent.i2, idx_parent.i3]:
                 self._keys[j] = idx_parent
+                self._heap_index[idx_parent.i1, idx_parent.i2, idx_parent.i3] = j
                 j = j_parent
                 continue
             break
         self._keys[j] = idx_new
+        self._heap_index[idx_new.i1, idx_new.i2, idx_new.i3] = j
 
 
     cpdef void _sift_up(Heap self, Py_ssize_t j_start):
@@ -631,11 +646,13 @@ cdef class Heap(object):
                 j_child = j_right
             # Move the smaller child up.
             self._keys[j] = self._keys[j_child]
+            self._heap_index[self._keys[j_child].i1, self._keys[j_child].i2, self._keys[j_child].i3] = j
             j = j_child
             j_child = 2 * j + 1
         # The leaf at pos is empty now.  Put newitem there, and bubble it up
         # to its final resting place (by sifting its parents down).
         self._keys[j] = idx_new
+        self._heap_index[idx_new.i1, idx_new.i2, idx_new.i3] = j
         self._sift_down(j_start, j)
 
 
@@ -660,6 +677,7 @@ cdef class Heap(object):
         for key in keys:
             self.push(*key)
         return (output)
+
 
 cdef class LinearInterpolator3D(object):
     cdef _REAL_t[:,:,:,:] _grid
@@ -892,7 +910,7 @@ cdef tuple update(
     '''
     The update algorithm to propagate the wavefront.
     '''
-    cdef Py_ssize_t       i, iax, idrxn, active_i1, active_i2, active_i3
+    cdef Py_ssize_t       i, iax, idrxn, active_i1, active_i2, active_i3, iheap
     cdef Py_ssize_t[6][3] nbrs
     cdef Py_ssize_t[3]    active_idx, max_idx, nbr, switch
     cdef Py_ssize_t[2]    drxns = [-1, 1]
@@ -934,9 +952,9 @@ cdef tuple update(
         # Recompute the values of u at all Close neighbours of Active
         # by solving the piecewise quadratic equation.
         for i in range(6):
-            nbr_i1 = nbrs[i][0]
-            nbr_i2 = nbrs[i][1]
-            nbr_i3 = nbrs[i][2]
+            #nbr_i1 = nbrs[i][0]
+            #nbr_i2 = nbrs[i][1]
+            #nbr_i3 = nbrs[i][2]
             nbr    = nbrs[i]
             if not stencil(nbr[0], nbr[1], nbr[2], max_idx[0], max_idx[1], max_idx[2]) \
                     or is_alive[nbr[0], nbr[1], nbr[2]]:
@@ -1055,11 +1073,12 @@ cdef tuple update(
                     new = (-b + libc.math.sqrt(b**2 - 4*a*c)) / (2*a)
                 if new < uu[nbr[0], nbr[1], nbr[2]]:
                     uu[nbr[0], nbr[1], nbr[2]] = new
-                    close._sift_down(0, close.which(*nbr))
                     # Tag as Close all neighbours of Active that are not
                     # Alive. If the neighbour is in Far, remove it from
                     # that list and add it to Close.
                     if is_far[nbr[0], nbr[1], nbr[2]]:
                         close.push(nbr[0], nbr[1], nbr[2])
                         is_far[nbr[0], nbr[1], nbr[2]] = False
+                    else:
+                        close._sift_down(0, close._heap_index[nbr[0], nbr[1], nbr[2]])
     return (count_a, count_b)
