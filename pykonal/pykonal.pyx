@@ -323,7 +323,8 @@ class EikonalSolver(object):
             self.close,
             self.is_far,
             self.pgrid.node_intervals,
-            self.norm
+            self.norm,
+            self.pgrid.is_periodic,
         )
 
         self.errors = {'denominator': errors[0], 'determinant': errors[1]}
@@ -334,11 +335,11 @@ class EikonalSolver(object):
 
 class GridND(object):
     def __init__(self, ndim=3, coord_sys='cartesian'):
-        self._ndim      = ndim
-        self._class     = str(self.__class__).strip('>\'').split('.')[-1]
-        self._update    = True
-        self._iax_null  = None
-        self._coord_sys = coord_sys
+        self._ndim        = ndim
+        self._class       = str(self.__class__).strip('>\'').split('.')[-1]
+        self._update      = True
+        self._iax_null    = None
+        self._coord_sys   = coord_sys
 
 
     @property
@@ -352,6 +353,17 @@ class GridND(object):
     @property
     def coord_sys(self):
         return (self._coord_sys)
+
+    @property
+    def is_periodic(self):
+        if not hasattr(self, '_is_periodic'):
+            self._is_periodic = np.array([False, False, False])
+            if self.coord_sys == 'spherical':
+                self._is_periodic[2] = np.isclose(
+                    self.max_coords[2]+self.node_intervals[2]-self.min_coords[2],
+                    2 * np.pi
+                )
+        return (self._is_periodic)
 
     @property
     def ndim(self):
@@ -868,39 +880,38 @@ cdef bint stencil(
 
 
 cdef tuple update(
-        _REAL_t[:,:,:] uu,
-        _REAL_t[:,:,:] vv,
+        _REAL_t[:,:,:]                             uu,
+        _REAL_t[:,:,:]                             vv,
         np.ndarray[np.npy_bool, ndim=3, cast=True] is_alive,
-        Heap close,
+        Heap                                       close,
         np.ndarray[np.npy_bool, ndim=3, cast=True] is_far,
-        _REAL_t[:] dd,
-        _REAL_t[:,:,:,:] norm
+        _REAL_t[:]                                 dd,
+        _REAL_t[:,:,:,:]                           norm,
+        np.ndarray[np.npy_bool, ndim=1, cast=True] is_periodic
 ):
     '''
     The update algorithm to propagate the wavefront.
     '''
-    cdef Py_ssize_t       i, iax, idrxn, trial_i1, trial_i2, trial_i3
+    cdef Py_ssize_t       i, iax, idrxn, active_i1, active_i2, active_i3
     cdef Py_ssize_t[6][3] nbrs
-    cdef Py_ssize_t[3]    trial_idx, max_idx, nbr, switch
+    cdef Py_ssize_t[3]    active_idx, max_idx, nbr, switch
     cdef Py_ssize_t[2]    drxns = [-1, 1]
     cdef Index3D          idx
     cdef int              count_a = 0
     cdef int              count_b = 0
     cdef int              inbr
     cdef int[2]           order
-    cdef int[3]           is_periodic
     cdef _REAL_t          a, b, c, bfd, ffd, new
     cdef _REAL_t[2]       fdu
     cdef _REAL_t[3]       aa, bb, cc
 
-    is_periodic   = False, False, True
     max_idx       = [is_alive.shape[0], is_alive.shape[1], is_alive.shape[2]]
 
     while close.size > 0:
-        # Let Trial be the point in Close with the smallest value of u
-        trial_i1, trial_i2, trial_i3 = close.pop()
-        trial_idx = [trial_i1, trial_i2, trial_i3]
-        is_alive[trial_i1, trial_i2, trial_i3] = True
+        # Let Active be the point in Close with the smallest value of u
+        active_i1, active_i2, active_i3 = close.pop()
+        active_idx = [active_i1, active_i2, active_i3]
+        is_alive[active_i1, active_i2, active_i3] = True
 
         # Determine the indices of neighbouring nodes.
         inbr = 0
@@ -911,16 +922,16 @@ cdef tuple update(
                 for jax in range(3):
                     if is_periodic[jax]:
                         nbrs[inbr][jax] = (
-                              trial_idx[jax]
+                              active_idx[jax]
                             + switch[jax]
                             + max_idx[jax]
                         )\
                         % max_idx[jax]
                     else:
-                        nbrs[inbr][jax] = trial_idx[jax] + switch[jax]
+                        nbrs[inbr][jax] = active_idx[jax] + switch[jax]
                 inbr += 1
 
-        # Recompute the values of u at all Close neighbours of Trial
+        # Recompute the values of u at all Close neighbours of Active
         # by solving the piecewise quadratic equation.
         for i in range(6):
             nbr_i1 = nbrs[i][0]
@@ -935,6 +946,9 @@ cdef tuple update(
                 for iax in range(3):
                     switch = [0, 0, 0]
                     idrxn = 0
+                    if norm[nbr[0], nbr[1], nbr[2], iax] == 0:
+                        aa[iax], bb[iax], cc[iax] = 0, 0, 0
+                        continue
                     for idrxn in range(2):
                         switch[iax] = drxns[idrxn]
                         nbr1_i1 = (nbr[0]+switch[0]+max_idx[0]) % max_idx[0]\
@@ -1009,14 +1023,14 @@ cdef tuple update(
                     nbr2_i3 = (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2]\
                         if is_periodic[2] else nbr[2]+2*switch[2]
                     if order[idrxn] == 2:
-                        aa[iax] = 9 / (4 * norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
+                        aa[iax] = 9 / (4*norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
                         bb[iax] = (
                             6 * uu[nbr2_i1, nbr2_i2, nbr2_i3]
                          - 24 * uu[nbr1_i1, nbr1_i2, nbr1_i3]
                         ) / (4 * norm[nbr[0], nbr[1], nbr[2], iax]**2)
                         cc[iax] = (
-                                   uu[nbr2_i1, nbr2_i2, nbr2_i3]**2 
-                            -  8 * uu[nbr2_i1, nbr2_i2, nbr2_i3] 
+                                   uu[nbr2_i1, nbr2_i2, nbr2_i3]**2
+                            -  8 * uu[nbr2_i1, nbr2_i2, nbr2_i3]
                                  * uu[nbr1_i1, nbr1_i2, nbr1_i3]
                             + 16 * uu[nbr1_i1, nbr1_i2, nbr1_i3]**2
                         ) / (4 * norm[nbr[0], nbr[1], nbr[2], iax]**2)
@@ -1042,7 +1056,7 @@ cdef tuple update(
                 if new < uu[nbr[0], nbr[1], nbr[2]]:
                     uu[nbr[0], nbr[1], nbr[2]] = new
                     close._sift_down(0, close.which(*nbr))
-                    # Tag as Close all neighbours of Trial that are not
+                    # Tag as Close all neighbours of Active that are not
                     # Alive. If the neighbour is in Far, remove it from
                     # that list and add it to Close.
                     if is_far[nbr[0], nbr[1], nbr[2]]:
