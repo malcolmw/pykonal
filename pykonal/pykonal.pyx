@@ -76,7 +76,6 @@ class EikonalSolver(object):
             raise (ValueError(f'Invalid coord_sys specification: {value}'))
         self._coord_sys = value
 
-
     @property
     def ndim(self):
         return (self._ndim)
@@ -566,7 +565,7 @@ cdef class Heap(object):
             self._heap_index[idx_return.i1, idx_return.i2, idx_return.i3] = -1
             self._keys[0] = last
             self._heap_index[last.i1, last.i2, last.i3] = 0
-            self._sift_up(0)
+            self.sift_up(0)
             return ((idx_return.i1, idx_return.i2, idx_return.i3))
         return ((last.i1, last.i2, last.i3))
 
@@ -578,7 +577,7 @@ cdef class Heap(object):
         idx.i1, idx.i2, idx.i3 = i1, i2, i3
         self._keys.push_back(idx)
         self._heap_index[idx.i1, idx.i2, idx.i3] = self._keys.size()-1
-        self._sift_down(0, self._keys.size()-1)
+        self.sift_down(0, self._keys.size()-1)
 
 
     cpdef void sift_down(Heap self, Py_ssize_t j_start, Py_ssize_t j):
@@ -603,30 +602,8 @@ cdef class Heap(object):
         self._keys[j] = idx_new
         self._heap_index[idx_new.i1, idx_new.i2, idx_new.i3] = j
 
-    cdef void _sift_down(Heap self, Py_ssize_t j_start, Py_ssize_t j):
-        '''
-        Doc string
-        '''
-        cdef Py_ssize_t j_parent
-        cdef Index3D    idx_new, idx_parent
 
-        idx_new = self._keys[j]
-        # Follow the path to the root, moving parents down until finding a place
-        # newitem fits.
-        while j > j_start:
-            j_parent = (j - 1) >> 1
-            idx_parent = self._keys[j_parent]
-            if self._values[idx_new.i1, idx_new.i2, idx_new.i3] < self._values[idx_parent.i1, idx_parent.i2, idx_parent.i3]:
-                self._keys[j] = idx_parent
-                self._heap_index[idx_parent.i1, idx_parent.i2, idx_parent.i3] = j
-                j = j_parent
-                continue
-            break
-        self._keys[j] = idx_new
-        self._heap_index[idx_new.i1, idx_new.i2, idx_new.i3] = j
-
-
-    cpdef void _sift_up(Heap self, Py_ssize_t j_start):
+    cpdef void sift_up(Heap self, Py_ssize_t j_start):
         '''
         Doc string
         '''
@@ -653,7 +630,7 @@ cdef class Heap(object):
         # to its final resting place (by sifting its parents down).
         self._keys[j] = idx_new
         self._heap_index[idx_new.i1, idx_new.i2, idx_new.i3] = j
-        self._sift_down(j_start, j)
+        self.sift_down(j_start, j)
 
 
     cpdef Py_ssize_t which(Heap self, Py_ssize_t i1, Py_ssize_t i2, Py_ssize_t i3):
@@ -1080,5 +1057,5 @@ cdef tuple update(
                         close.push(nbr[0], nbr[1], nbr[2])
                         is_far[nbr[0], nbr[1], nbr[2]] = False
                     else:
-                        close._sift_down(0, close._heap_index[nbr[0], nbr[1], nbr[2]])
+                        close.sift_down(0, close._heap_index[nbr[0], nbr[1], nbr[2]])
     return (count_a, count_b)
