@@ -189,11 +189,8 @@ class EikonalSolver(object):
         self._update()
 
 
-    def trace_ray(self, *args, method='euler', tolerance=1e-2):
-        if method.upper() == 'EULER':
-            return (self._trace_ray_euler(*args, tolerance=tolerance))
-        else:
-            raise (NotImplementedError('Only Euler integration is implemented yet'))
+    #def trace_ray(self, *args, step_size=None):
+        #return (self._trace_ray_euler_spherical(*args))
 
 
     def transfer_travel_times_from(self, old, origin, rotate=False, set_alive=False):
@@ -238,10 +235,137 @@ class EikonalSolver(object):
         vvi = return_nan_on_error(LinearInterpolator3D(old.vgrid, old.vv))
         self.vv = np.apply_along_axis(vvi, -1, vgrid_new)
 
+    def _get_gradient(self):
+        if self.coord_sys == 'cartesian':
+            gg = np.moveaxis(
+                np.stack(
+                    np.gradient(
+                        self.uu,
+                        *[
+                            self.pgrid.node_intervals[iax]
+                            for iax in range(self.ndim) if iax not in self.iax_null
+                        ],
+                        axis=[
+                            iax
+                            for iax in range(self.ndim)
+                            if iax not in self.iax_null
+                        ]
+                    )
+                ),
+                0, -1
+            )
+            for iax in self.iax_null:
+                gg = np.insert(gg, iax, np.zeros(self.pgrid.npts), axis=-1)
+        else:
+            grid       = self.pgrid[...]
+            d0, d1, d2 = self.pgrid.node_intervals
+            n0, n1, n2 = self.pgrid.npts
 
-    def _trace_ray_euler(self, start):
+            if 0 not in self.iax_null:
+                g0 = np.concatenate(
+                    [
+                        # Second-order forward difference evaluated along the lower edge
+                        (
+                            (
+                                    self.uu[2]
+                                - 4*self.uu[1]
+                                + 3*self.uu[0]
+                            ) / (2*d0)
+                        ).reshape(1, n1, n2),
+                        # Second order central difference evaluated in the interior
+                        (self.uu[2:] - self.uu[:-2]) / (2*d0),
+                        # Second order backward difference evaluated along the upper edge
+                        (
+                            (
+                                    self.uu[-3]
+                                - 4*self.uu[-2]
+                                + 3*self.uu[-1]
+                            ) / (2*d0)
+                        ).reshape(1, n1, n2)
+                    ],
+                    axis=0
+                )
+            else:
+                g0 = np.zeros((n0, n1, n2))
+
+            if 1 not in self.iax_null:
+                g1 = np.concatenate(
+                    [
+                        # Second-order forward difference evaluated along the lower edge
+                        (
+                            (
+                                    self.uu[:,2]
+                                - 4*self.uu[:,1]
+                                + 3*self.uu[:,0]
+                            ) / (2*grid[:,0,:,0]*d1)
+                        ).reshape(n0, 1, n2),
+                        # Second order central difference evaluated in the interior
+                        (
+                              self.uu[:,2:]
+                            - self.uu[:,:-2]
+                        ) / (2*grid[:,1:-1,:,0]*d1),
+                        # Second order backward difference evaluated along the upper edge
+                        (
+                            (
+                                    self.uu[:,-3]
+                                - 4*self.uu[:,-2]
+                                + 3*self.uu[:,-1]
+                            ) / (2*grid[:,-1,:,0]*d1)
+                        ).reshape(n0, 1, n2)
+                    ],
+                    axis=1
+                )
+            else:
+                g1 = np.zeros((n0, n1, n2))
+
+            if 2 not in self.iax_null:
+                g2 = np.concatenate(
+                    [
+                        # Second-order forward difference evaluated along the lower edge
+                        (
+                              (
+                                    self.uu[:,:,2]
+                                - 4*self.uu[:,:,1]
+                                + 3*self.uu[:,:,0]
+                            ) / (2*grid[:,:,0,0]*np.sin(grid[:,:,0,1])*d2)
+                        ).reshape(n0, n1, 1),
+
+                        # Second order central difference evaluated in the interior
+                        (
+                              self.uu[:,:,2:]
+                            - self.uu[:,:,:-2]
+                        ) / (2*grid[:,:,1:-1,0]*np.sin(grid[:,:,1:-1,1])*d2),
+                        # Second order backward difference evaluated along the upper edge
+                        (
+                            (
+                                    self.uu[:,:,-3]
+                                - 4*self.uu[:,:,-2]
+                                + 3*self.uu[:,:,-1]
+                            ) / (2*grid[:,:,-1,0]*np.sin(grid[:,:,-1,1])*d2)
+                        ).reshape(n0, n1, 1)
+                    ],
+                    axis=2
+                )
+            else:
+                g2 = np.zeros((n0, n1, n2))
+            return (np.moveaxis(np.stack([g0, g1, g2]), 0, -1))
+
+    def _get_step_size(self):
+        # This is will not work in spherical coordinates when rho0 = 0.
+        return(
+            self.norm[
+                tuple(
+                    slice(self.norm.shape[iax])
+                    if iax not in self.iax_null
+                    else 0
+                    for iax in range(self.ndim)
+                )
+            ].min() / 2
+        )
+
+    def trace_ray(self, start, step_size=None):
         cdef cpp_vector[_REAL_t *]       ray
-        cdef _REAL_t                     step_size, gx, gy, gz, norm
+        cdef _REAL_t                     g0, g1, g2, norm
         cdef _REAL_t                     *point_new
         cdef _REAL_t[3]                  point_last, point_2last
         cdef Py_ssize_t                  i
@@ -251,50 +375,30 @@ class EikonalSolver(object):
         point_new[0], point_new[1], point_new[2] = start
         ray.push_back(point_new)
         # step_size <-- half the smallest node_interval
-        step_size = np.min(
-            [
-                self.pgrid.node_intervals[iax]
-                for iax in range(self.ndim) if iax not in self.iax_null
-            ]
-        ) / 2
-        # Create an interpolator for the gradient field
-        gg = np.moveaxis(
-            np.stack(
-                np.gradient(
-                    self.uu,
-                    *[
-                        self.pgrid.node_intervals[iax]
-                        for iax in range(self.ndim) if iax not in self.iax_null
-                    ],
-                    axis=[
-                        iax
-                        for iax in range(self.ndim)
-                        if iax not in self.iax_null
-                    ]
-                )
-            ),
-            0, -1
-        )
-        for iax in self.iax_null:
-            gg = np.insert(gg, iax, np.zeros(self.pgrid.npts), axis=-1)
-        grad_x = LinearInterpolator3D(self.pgrid, gg[...,0].astype(DTYPE_REAL))
-        grad_y = LinearInterpolator3D(self.pgrid, gg[...,1].astype(DTYPE_REAL))
-        grad_z = LinearInterpolator3D(self.pgrid, gg[...,2].astype(DTYPE_REAL))
+        if step_size is None:
+            step_size = self._get_step_size()
+        gg = self._get_gradient()
+        grad_0 = LinearInterpolator3D(self.pgrid, gg[...,0].astype(DTYPE_REAL))
+        grad_1 = LinearInterpolator3D(self.pgrid, gg[...,1].astype(DTYPE_REAL))
+        grad_2 = LinearInterpolator3D(self.pgrid, gg[...,2].astype(DTYPE_REAL))
         # Create an interpolator for the travel-time field
         uu = LinearInterpolator3D(self.pgrid, self.uu)
         point_last   = ray.back()
         while True:
-            gx   = grad_x.interpolate(point_last)
-            gy   = grad_y.interpolate(point_last)
-            gz   = grad_z.interpolate(point_last)
-            norm = libc.math.sqrt(gx**2 + gy**2 + gz**2)
-            gx  /= norm
-            gy  /= norm
-            gz  /= norm
+            g0   = grad_0.interpolate(point_last)
+            g1   = grad_1.interpolate(point_last)
+            g2   = grad_2.interpolate(point_last)
+            norm = libc.math.sqrt(g0**2 + g1**2 + g2**2)
+            g0  /= norm
+            g1  /= norm
+            g2  /= norm
+            if self.coord_sys == 'spherical':
+                g1 /= point_last[0]
+                g2 /= point_last[0] * np.sin(point_last[1])
             point_new = <_REAL_t *> malloc(3 * sizeof(_REAL_t))
-            point_new[0] = point_last[0] - step_size * gx
-            point_new[1] = point_last[1] - step_size * gy
-            point_new[2] = point_last[2] - step_size * gz
+            point_new[0] = point_last[0] - step_size * g0
+            point_new[1] = point_last[1] - step_size * g1
+            point_new[2] = point_last[2] - step_size * g2
             point_2last = ray.back()
             ray.push_back(point_new)
             point_last   = ray.back()
@@ -307,6 +411,76 @@ class EikonalSolver(object):
             ray_np[i, 2] = ray[i][2]
             free(ray[i])
         return (ray_np)
+
+
+    #def _trace_ray_euler_cartesian(self, start):
+    #    cdef cpp_vector[_REAL_t *]       ray
+    #    cdef _REAL_t                     step_size, gx, gy, gz, norm
+    #    cdef _REAL_t                     *point_new
+    #    cdef _REAL_t[3]                  point_last, point_2last
+    #    cdef Py_ssize_t                  i
+    #    cdef np.ndarray[_REAL_t, ndim=2] ray_np
+
+    #    point_new = <_REAL_t *> malloc(3 * sizeof(_REAL_t))
+    #    point_new[0], point_new[1], point_new[2] = start
+    #    ray.push_back(point_new)
+    #    # step_size <-- half the smallest node_interval
+    #    step_size = np.min(
+    #        [
+    #            self.pgrid.node_intervals[iax]
+    #            for iax in range(self.ndim) if iax not in self.iax_null
+    #        ]
+    #    ) / 2
+    #    # Create an interpolator for the gradient field
+    #    gg = np.moveaxis(
+    #        np.stack(
+    #            np.gradient(
+    #                self.uu,
+    #                *[
+    #                    self.pgrid.node_intervals[iax]
+    #                    for iax in range(self.ndim) if iax not in self.iax_null
+    #                ],
+    #                axis=[
+    #                    iax
+    #                    for iax in range(self.ndim)
+    #                    if iax not in self.iax_null
+    #                ]
+    #            )
+    #        ),
+    #        0, -1
+    #    )
+    #    for iax in self.iax_null:
+    #        gg = np.insert(gg, iax, np.zeros(self.pgrid.npts), axis=-1)
+    #    grad_x = LinearInterpolator3D(self.pgrid, gg[...,0].astype(DTYPE_REAL))
+    #    grad_y = LinearInterpolator3D(self.pgrid, gg[...,1].astype(DTYPE_REAL))
+    #    grad_z = LinearInterpolator3D(self.pgrid, gg[...,2].astype(DTYPE_REAL))
+    #    # Create an interpolator for the travel-time field
+    #    uu = LinearInterpolator3D(self.pgrid, self.uu)
+    #    point_last   = ray.back()
+    #    while True:
+    #        gx   = grad_x.interpolate(point_last)
+    #        gy   = grad_y.interpolate(point_last)
+    #        gz   = grad_z.interpolate(point_last)
+    #        norm = libc.math.sqrt(gx**2 + gy**2 + gz**2)
+    #        gx  /= norm
+    #        gy  /= norm
+    #        gz  /= norm
+    #        point_new = <_REAL_t *> malloc(3 * sizeof(_REAL_t))
+    #        point_new[0] = point_last[0] - step_size * gx
+    #        point_new[1] = point_last[1] - step_size * gy
+    #        point_new[2] = point_last[2] - step_size * gz
+    #        point_2last = ray.back()
+    #        ray.push_back(point_new)
+    #        point_last   = ray.back()
+    #        if uu.interpolate(point_2last) <= uu.interpolate(point_last):
+    #            break
+    #    ray_np = np.zeros((ray.size()-1, 3), dtype=DTYPE_REAL)
+    #    for i in range(ray.size()-1):
+    #        ray_np[i, 0] = ray[i][0]
+    #        ray_np[i, 1] = ray[i][1]
+    #        ray_np[i, 2] = ray[i][2]
+    #        free(ray[i])
+    #    return (ray_np)
 
 
     def _update(self):
@@ -708,6 +882,7 @@ cdef class LinearInterpolator3D(object):
                     )
                 )
             idx[iax] = (point[iax] - self._min_coords[iax]) / self._node_intervals[iax]
+# TODO:: Accounting for node_interval is likely uneccessary here.
             delta[iax] = (idx[iax] % 1.) * self._node_intervals[iax]
         i1   = <Py_ssize_t> idx[0]
         i2   = <Py_ssize_t> idx[1]
