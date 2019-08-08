@@ -208,17 +208,6 @@ class EikonalSolver(object):
             pgrid_new[...,2] = np.mod(pgrid_new[...,2], 2*np.pi)
         uui = return_nan_on_error(LinearInterpolator3D(old.pgrid, old.uu))
 
-        #shape = pgrid_new.shape
-        #for i1 in range(shape[0]):
-        #    for i2 in range(shape[1]):
-        #        for i3 in range(shape[2]):
-        #            idx = (i1, i2, i3)
-        #            u = uui(pgrid_new[idx])
-        #            if not np.isnan(u):
-        #                self.uu[idx]       = u
-        #                self.is_far[idx]   = False
-        #                self.is_alive[idx] = set_alive
-        #                self.close.push(*idx)
         for idx in np.argwhere(
              (pgrid_new[...,0] > old.pgrid.min_coords[0])
             &(pgrid_new[...,0] < old.pgrid.max_coords[0])
