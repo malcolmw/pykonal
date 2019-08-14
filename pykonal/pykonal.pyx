@@ -268,7 +268,9 @@ class EikonalSolver(object):
         ):
             idx = tuple(idx)
             u   = uui(pgrid_new[idx])
-            if not np.isnan(u):
+            # The np.isinf(u) check is a hack.
+            # The interpolator should never return np.inf.
+            if not np.isnan(u) and not np.isinf(u):
                 self.uu[idx]       = u
                 self.is_far[idx]   = False
                 self.is_alive[idx] = set_alive
