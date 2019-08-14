@@ -227,8 +227,16 @@ class EikonalSolver(object):
             point_2last = ray.back()
             ray.push_back(point_new)
             point_last   = ray.back()
-            if uu.interpolate(point_2last) <= uu.interpolate(point_last):
-                break
+            try:
+                if uu.interpolate(point_2last) <= uu.interpolate(point_last):
+                    break
+            except OutOfBoundsError:
+                raise (
+                    OutOfBoundsError(
+                        f'Ray went out of bounds: '
+                        f'{point_last[0], point_last[1], point_last[2]}'
+                    )
+                )
         ray_np = np.zeros((ray.size()-1, 3), dtype=DTYPE_REAL)
         for i in range(ray.size()-1):
             ray_np[i, 0] = ray[i][0]
