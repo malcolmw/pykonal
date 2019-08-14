@@ -947,9 +947,6 @@ cdef tuple update(
         # Recompute the values of u at all Close neighbours of Active
         # by solving the piecewise quadratic equation.
         for i in range(6):
-            #nbr_i1 = nbrs[i][0]
-            #nbr_i2 = nbrs[i][1]
-            #nbr_i3 = nbrs[i][2]
             nbr    = nbrs[i]
             if not stencil(nbr[0], nbr[1], nbr[2], max_idx[0], max_idx[1], max_idx[2]) \
                     or is_alive[nbr[0], nbr[1], nbr[2]]:
