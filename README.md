@@ -1,9 +1,5 @@
 # Welcome to the *pykonal* repository!
-This code implements a mixed- (first- and second-) order finite-difference solver for the 3D Eikonal equation in Cartesian coordinates using the Fast-Marching Method of Sethian et al. (1996).
-
-
-## Planned development
-1. Implement in spherical coordinates
+This code implements a mixed- (first- and second-) order finite-difference solver for the 3D Eikonal equation in Cartesian and spherical coordinates using the Fast-Marching Method of Sethian et al. (1996).
 
 
 ## Installation
