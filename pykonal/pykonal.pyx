@@ -1,14 +1,15 @@
+# Specify Cython compiler flags.
 # cython:    boundscheck=False
 # cython:    cdivision=True
 # cython:    language_level=3
 # distutils: language=c++
 
-# Python imports
+# Python imports.
 import collections
 import itertools
 import numpy as np
 
-# Cython imports
+# Cython imports.
 cimport numpy as np
 cimport libc.math
 from libcpp.vector cimport vector as cpp_vector
@@ -20,6 +21,7 @@ ctypedef np.uint16_t  _UINT_t
 DTYPE_REAL = np.float64
 DTYPE_UINT = np.uint16
 
+# Define a value to signal errors.
 DEF _ERROR_REAL = -999999999999.
 ERROR_REAL      = DTYPE_REAL(_ERROR_REAL)
 
@@ -34,10 +36,23 @@ class OutOfBoundsError(Exception):
 
 
 class EikonalSolver(object):
+    '''
+    A class to solver the Eikonal equation in 3D Cartesian or
+    spherical coordinates.
+
+    Properties
+    **********
+    .. autoattribute:: close
+    .. autoattribute:: iax_null
+    .. autoattribute:: is_alive
+    .. autoattribute:: is_far
+
+    Methods
+    *******
+    .. automethod:: trace_ray(self, end, step_size=None)
+    '''
+
     def __init__(self, coord_sys='cartesian'):
-        '''
-        Solves the Eikonal equation in 3D cartesian coordinates.
-        '''
         self._ndim      = 3
         self._class     = str(self.__class__).strip('>\'').split('.')[-1]
         self._coord_sys = coord_sys
@@ -45,32 +60,45 @@ class EikonalSolver(object):
 
     @property
     def close(self):
+        '''
+        A list of node indices in the *Trial* region.
+        '''
         if not hasattr(self, '_close'):
             self._close = Heap(self.uu)
         return (self._close)
 
     @property
     def iax_null(self):
+        '''
+        '''
         return (self.pgrid.iax_null)
 
     @property
     def is_alive(self):
+        '''
+        '''
         if not hasattr(self, '_is_alive'):
             self._is_alive = np.full(self.pgrid.npts, fill_value=False, dtype=np.bool)
         return (self._is_alive)
 
     @property
     def is_far(self):
+        '''
+        '''
         if not hasattr(self, '_is_far'):
             self._is_far = np.full(self.pgrid.npts, fill_value=True, dtype=np.bool)
         return (self._is_far)
 
     @property
     def coord_sys(self):
+        '''
+        '''
         return (self._coord_sys)
 
     @coord_sys.setter
     def coord_sys(self, value):
+        '''
+        '''
         value = value.lower()
         if value not in ('cartesian', 'spherical'):
             raise (ValueError(f'Invalid coord_sys specification: {value}'))
@@ -78,10 +106,14 @@ class EikonalSolver(object):
 
     @property
     def ndim(self):
+        '''
+        '''
         return (self._ndim)
 
     @property
     def norm(self):
+        '''
+        '''
         if not hasattr(self, '_norm'):
             self._norm = np.tile(
                 self.pgrid.node_intervals,
@@ -95,6 +127,8 @@ class EikonalSolver(object):
 
     @property
     def pgrid(self):
+        '''
+        '''
         if not hasattr(self, '_pgrid'):
             self._pgrid = GridND(ndim=self._ndim, coord_sys=self.vgrid.coord_sys)
             for attr in ('min_coords', 'node_intervals', 'npts'):
@@ -103,10 +137,14 @@ class EikonalSolver(object):
 
     @property
     def src_loc(self):
+        '''
+        '''
         return (self._src_loc)
 
     @src_loc.setter
     def src_loc(self, value):
+        '''
+        '''
         if not isinstance(value, collections.Iterable):
             raise (TypeError(f'{self._class}.src_loc value must be <Iterable> type'))
         if len(value) != self._ndim:
@@ -118,6 +156,8 @@ class EikonalSolver(object):
 
     @property
     def src_rtp(self):
+        '''
+        '''
         if self.coord_sys == 'spherical':
             return (self.src_loc)
         else:
@@ -128,6 +168,8 @@ class EikonalSolver(object):
 
     @property
     def src_xyz(self):
+        '''
+        '''
         if self.coord_sys == 'cartesian':
             return (self.src_loc)
         else:
@@ -139,16 +181,22 @@ class EikonalSolver(object):
 
     @property
     def uu(self):
+        '''
+        '''
         if not hasattr(self, '_uu'):
             self._uu = np.full(self.pgrid.npts, fill_value=np.inf, dtype=DTYPE_REAL)
         return (self._uu)
 
     @property
     def vgrid(self):
+        '''
+        '''
         return (self._vgrid)
 
     @property
     def vv(self):
+        '''
+        '''
         return (self._vv)
 
     @vv.setter
@@ -159,6 +207,8 @@ class EikonalSolver(object):
 
     @property
     def vvp(self):
+        '''
+        '''
         cdef Py_ssize_t                i1, i2, i3
         cdef np.ndarray[_REAL_t, ndim=3] vvp
 
@@ -186,10 +236,32 @@ class EikonalSolver(object):
 
 
     def solve(self):
+        '''
+        '''
         self._update()
 
 
-    def trace_ray(self, start, step_size=None):
+    def trace_ray(self, end, step_size=None):
+        '''
+        Trace the ray ending at *end*.
+
+        This method traces the ray that ends at *end* in reverse
+        direction by taking small steps along the path of steepest
+        travel-time descent. The resulting ray is reversed before being
+        returned, so it is in the normal forward-time orientation.
+
+        :param end: Coordinates of the ray's end point.
+        :type end: tuple, list, np.ndarray
+
+        :param step_size: The distance between points on the ray.
+            The smaller this value is the more accurate the resulting
+            ray will be. By default, this parameter is assigned the
+            smallest node interval of the propagation grid.
+        :type step_size: float, optional
+
+        :return: The ray path ending at *end*.
+        :rtype:  np.ndarray(Nx3)
+        '''
         cdef cpp_vector[_REAL_t *]       ray
         cdef _REAL_t                     g0, g1, g2, norm
         cdef _REAL_t                     *point_new
@@ -198,7 +270,7 @@ class EikonalSolver(object):
         cdef np.ndarray[_REAL_t, ndim=2] ray_np
 
         point_new = <_REAL_t *> malloc(3 * sizeof(_REAL_t))
-        point_new[0], point_new[1], point_new[2] = start
+        point_new[0], point_new[1], point_new[2] = end
         ray.push_back(point_new)
         if step_size is None:
             step_size = self._get_step_size()
@@ -243,14 +315,26 @@ class EikonalSolver(object):
             ray_np[i, 1] = ray[i][1]
             ray_np[i, 2] = ray[i][2]
             free(ray[i])
-        return (ray_np)
+        return (np.flipud(ray_np))
 
 
     def transfer_travel_times_from(self, old, origin, rotate=False, set_alive=False):
         '''
         Transfer the velocity model from old EikonalSolver to self
-        :param pykonal.EikonalSolver old: The old EikonalSolver to transfer from.
-        :param tuple old_origin: The coordinates of the origin of old w.r.t. to the self frame of reference.
+
+        :param old: The old EikonalSolver to transfer from.
+        :type old: pykonal.EikonalSolver
+
+        :param origin: The coordinates of the origin of old w.r.t. to
+            the self frame of reference.
+        :type origin: tuple, list, np.ndarray
+
+        :param rotate: Rotate the coordinates?
+        :type rotate: bool
+
+        :return: None
+        :rtype: NoneType
+
         '''
 
         pgrid_new = self.pgrid.map_to(old.coord_sys, origin, rotate=rotate)
