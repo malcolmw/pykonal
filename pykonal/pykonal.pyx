@@ -1154,14 +1154,10 @@ cdef tuple update(
                 c = cc[0] + cc[1] + cc[2] - 1/vv[nbr[0], nbr[1], nbr[2]]**2
                 if b**2 < 4*a*c:
                     # This is a hack to solve the quadratic equation
-                    # when the determinant is negative. If the
-                    # magnitude of the determinant is very small
-                    # compared to the solution obtained by setting it
-                    # to zero, the approximate solution is accepted.
+                    # when the discrimnant is negative. This hack
+                    # simply sets the discriminant to zero.
                     new = -b / (2*a)
-                    if (4*a*c - b**2) / new > 1e-4:
-                        count_b += 1
-                        continue
+                    count_b += 1
                 else:
                     new = (-b + libc.math.sqrt(b**2 - 4*a*c)) / (2*a)
                 if new < uu[nbr[0], nbr[1], nbr[2]]:
