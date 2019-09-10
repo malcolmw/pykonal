@@ -395,6 +395,7 @@ class EikonalSolver(object):
             )
             for iax in self.iax_null:
                 gg = np.insert(gg, iax, np.zeros(self.pgrid.npts), axis=-1)
+            return (gg)
         else:
             grid       = self.pgrid[...]
             d0, d1, d2 = self.pgrid.node_intervals
