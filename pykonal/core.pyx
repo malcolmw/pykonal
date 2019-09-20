@@ -9,6 +9,9 @@ import collections
 import itertools
 import numpy as np
 
+# Local imports.
+from . import transform
+
 # Cython imports.
 cimport numpy as np
 cimport libc.math
@@ -53,10 +56,9 @@ class EikonalSolver(object):
     '''
 
     def __init__(self, coord_sys='cartesian'):
-        self._ndim      = 3
         self._class     = str(self.__class__).strip('>\'').split('.')[-1]
         self._coord_sys = coord_sys
-        self._vgrid     = GridND(ndim=self._ndim, coord_sys=self.coord_sys)
+        self._vgrid     = Grid3D(coord_sys=self.coord_sys)
 
     @property
     def close(self):
@@ -105,12 +107,6 @@ class EikonalSolver(object):
         self._coord_sys = value
 
     @property
-    def ndim(self):
-        '''
-        '''
-        return (self._ndim)
-
-    @property
     def norm(self):
         '''
         '''
@@ -130,7 +126,7 @@ class EikonalSolver(object):
         '''
         '''
         if not hasattr(self, '_pgrid'):
-            self._pgrid = GridND(ndim=self._ndim, coord_sys=self.vgrid.coord_sys)
+            self._pgrid = Grid3D(coord_sys=self.vgrid.coord_sys)
             for attr in ('min_coords', 'node_intervals', 'npts'):
                 setattr(self._pgrid, attr, getattr(self.vgrid, attr))
         return (self._pgrid)
@@ -147,8 +143,8 @@ class EikonalSolver(object):
         '''
         if not isinstance(value, collections.Iterable):
             raise (TypeError(f'{self._class}.src_loc value must be <Iterable> type'))
-        if len(value) != self._ndim:
-            raise (ValueError(f'{self._class}.src_loc must have len() == {self._ndim}'))
+        if len(value) != 3:
+            raise (ValueError(f'{self._class}.src_loc must have len() == 3'))
         value = np.array(value, dtype=DTYPE_REAL)
         if np.any(value < self.pgrid.min_coords) or np.any(value > self.pgrid.max_coords):
             raise (OutOfBoundsError('Source location lies outside of propagation grid.'))
@@ -382,11 +378,11 @@ class EikonalSolver(object):
                         self.uu,
                         *[
                             self.pgrid.node_intervals[iax]
-                            for iax in range(self.ndim) if iax not in self.iax_null
+                            for iax in range(3) if iax not in self.iax_null
                         ],
                         axis=[
                             iax
-                            for iax in range(self.ndim)
+                            for iax in range(3)
                             if iax not in self.iax_null
                         ]
                     )
@@ -499,7 +495,7 @@ class EikonalSolver(object):
                     slice(self.norm.shape[iax])
                     if iax not in self.iax_null
                     else 0
-                    for iax in range(self.ndim)
+                    for iax in range(3)
                 )
             ].min() / 2
         )
@@ -533,9 +529,8 @@ class EikonalSolver(object):
         del(self._vvp)
 
 
-class GridND(object):
-    def __init__(self, ndim=3, coord_sys='cartesian'):
-        self._ndim        = ndim
+class Grid3D(object):
+    def __init__(self, coord_sys='cartesian'):
         self._class       = str(self.__class__).strip('>\'').split('.')[-1]
         self._update      = True
         self._iax_null    = None
@@ -566,10 +561,6 @@ class GridND(object):
         return (self._is_periodic)
 
     @property
-    def ndim(self):
-        return (self._ndim)
-
-    @property
     def node_intervals(self):
         return(self._node_intervals)
 
@@ -577,8 +568,8 @@ class GridND(object):
     def node_intervals(self, value):
         if not isinstance(value, collections.Iterable):
             raise (TypeError(f'{self._class}.node_intervals value must be <Iterable> type'))
-        if len(value) != self._ndim:
-            raise (ValueError(f'{self._class}.node_intervals must have len() == {self._ndim}'))
+        if len(value) != 3:
+            raise (ValueError(f'{self._class}.node_intervals must have len() == 3'))
         self._node_intervals = np.array(value, dtype=DTYPE_REAL)
         self._update = True
 
@@ -591,8 +582,8 @@ class GridND(object):
     def npts(self, value):
         if not isinstance(value, collections.Iterable):
             raise (TypeError(f'{self._class}.delta value must be <Iterable> type'))
-        if len(value) != self.ndim:
-            raise (ValueError(f'{self._class}.delta must have len() == {self._ndim}'))
+        if len(value) != 3:
+            raise (ValueError(f'{self._class}.delta must have len() == 3'))
         self._npts = np.array(value, dtype=DTYPE_UINT)
         self.iax_null = np.argwhere(self.npts == 1).flatten()
         self._update = True
@@ -606,8 +597,8 @@ class GridND(object):
     def min_coords(self, value):
         if not isinstance(value, collections.Iterable):
             raise (TypeError(f'{self._class}.min_coords value must be <Iterable> type'))
-        if len(value) != self._ndim:
-            raise (ValueError(f'{self._class}.min_coords must have len() == {self._ndim}'))
+        if len(value) != 3:
+            raise (ValueError(f'{self._class}.min_coords must have len() == 3'))
         self._min_coords = np.array(value, dtype=DTYPE_REAL)
         self._update = True
 
@@ -621,99 +612,48 @@ class GridND(object):
 
 
     @property
-    def mesh(self):
+    def nodes(self):
         '''
-        mesh is indexed like [iww0, iww1, ..., iwwN, iax]
+        nodes is indexed like [iww0, iww1, ..., iwwN, iax]
         '''
         if self._update is True:
-            mesh = np.meshgrid(
+            nodes = np.meshgrid(
                 *[
                     np.linspace(
                         self.min_coords[idx],
                         self.max_coords[idx],
                         self.npts[idx]
                     )
-                    for idx in range(self._ndim)
+                    for idx in range(3)
                 ],
                 indexing='ij'
             )
-            self._mesh = np.moveaxis(np.stack(mesh), 0, -1).astype(DTYPE_REAL)
+            self._nodes = np.moveaxis(np.stack(nodes), 0, -1).astype(DTYPE_REAL)
             self._update = False
-        return (self._mesh)
-
+        return (self._nodes)
 
     def map_to(self, coord_sys, origin, rotate=False):
         '''
-        Return the coordinates of self in the new reference frame.
-
-        :param pykonal.GridND self: Coordinate grid to transform.
-        :param str coord_sys: Coordinate system to transform to.
+        Return the coordinates of self in a new reference frame.
+        :param coord_sys: Coordinate system to transform to ('*spherical*', or '*Cartesian*')
+        :type coord_sys: str
         :param origin: Coordinates of the origin of self w.r.t. the new frame of reference.
+        :type origin: 3-tuple, list, np.ndarray
         '''
-        origin = np.array(origin)
         if self.coord_sys == 'spherical' and coord_sys.lower() == 'spherical':
-            xx_old = self[...,0] * np.sin(self[...,1]) * np.cos(self[...,2])
-            yy_old = self[...,0] * np.sin(self[...,1]) * np.sin(self[...,2])
-            zz_old = self[...,0] * np.cos(self[...,1])
-            origin_xyz = [
-                origin[0] * np.sin(origin[1]) * np.cos(origin[2]),
-                origin[0] * np.sin(origin[1]) * np.sin(origin[2]),
-                origin[0] * np.cos(origin[1])
-            ]
-            xx_new  = xx_old + origin_xyz[0]
-            yy_new  = yy_old + origin_xyz[1]
-            zz_new  = zz_old + origin_xyz[2]
-            xyz_new = np.moveaxis(np.stack([xx_new,yy_new,zz_new]), 0, -1)
-
-            rr_new             = np.sqrt(np.sum(np.square(xyz_new), axis=-1))
-            old_error_settings = np.seterr(divide='ignore', invalid='ignore')
-            tt_new             = np.arccos(xyz_new[...,2] / rr_new)
-            np.seterr(**old_error_settings)
-            pp_new             = np.arctan2(xyz_new[...,1], xyz_new[...,0])
-            rtp_new            = np.moveaxis(
-                np.stack([rr_new, tt_new, pp_new]),
-                0,
-                -1
-            )
-            return (rtp_new)
+            return (transform.sph2sph(self.nodes, origin))
         elif self.coord_sys == 'cartesian' and coord_sys.lower() == 'spherical':
-            origin_xyz = [
-                origin[0] * np.sin(origin[1]) * np.cos(origin[2]),
-                origin[0] * np.sin(origin[1]) * np.sin(origin[2]),
-                origin[0] * np.cos(origin[1])
-            ]
-            if rotate is True:
-                xyz_old = self[...].dot(
-                    rotation_matrix(np.pi/2-origin[2], 0, np.pi/2-origin[1])
-                )
-            else:
-                xyz_old = self[...]
-            xyz_new            = xyz_old + origin_xyz
-            rr_new             = np.sqrt(np.sum(np.square(xyz_new), axis=-1))
-            old_error_settings = np.seterr(divide='ignore', invalid='ignore')
-            tt_new             = np.arccos(xyz_new[...,2] / rr_new)
-            np.seterr(**old_error_settings)
-            pp_new      = np.arctan2(xyz_new[...,1], xyz_new[...,0])
-            rtp_new = np.moveaxis(np.stack([rr_new,tt_new, pp_new]), 0, -1)
-            return (rtp_new)
+            return (transform.xyz2sph(self.nodes, origin, rotate=rotate))
         elif self.coord_sys == 'spherical' and coord_sys.lower() == 'cartesian':
-            origin_xyz = origin
-            xx_old     = self[...,0] * np.sin(self[...,1]) * np.cos(self[...,2])
-            yy_old     = self[...,0] * np.sin(self[...,1]) * np.sin(self[...,2])
-            zz_old     = self[...,0] * np.cos(self[...,1])
-            xx_new     = xx_old + origin_xyz[0]
-            yy_new     = yy_old + origin_xyz[1]
-            zz_new     = zz_old + origin_xyz[2]
-            xyz_new    = np.moveaxis(np.stack([xx_new,yy_new,zz_new]), 0, -1)
-            return (xyz_new)
+            return (transform.sph2xyz(self.nodes, origin))
         elif self.coord_sys == 'cartesian' and coord_sys.lower() == 'cartesian':
-            return (self[...] + origin)
+            return (transform.xyz2xyz(self.nodes, origin))
         else:
             raise (NotImplementedError())
 
 
     def __getitem__(self, key):
-        return (self.mesh[key])
+        return (self.nodes[key])
 
 
 cdef class Heap(object):
@@ -874,7 +814,7 @@ cdef class LinearInterpolator3D(object):
         self._min_coords     = grid.min_coords
         self._max_coords     = grid.max_coords
         self._iax_isnull     = [
-            True if iax in grid.iax_null else False for iax in range(grid.ndim)
+            True if iax in grid.iax_null else False for iax in range(3)
         ]
 
 

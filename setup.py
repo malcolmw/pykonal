@@ -21,7 +21,7 @@ package_data    = {
 }
 required        = ['cython', 'numpy', 'scipy']
 extras          = {'tests': ['nose']}
-ext_modules     = cythonize('pykonal/pykonal.pyx')
+ext_modules     = cythonize('pykonal/core.pyx')
 include_dirs    = [np.get_include()]
 license         = 'GNU GPLv3'
 
