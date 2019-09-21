@@ -336,7 +336,7 @@ class EikonalSolver(object):
         pgrid_new = self.pgrid.map_to(old.coord_sys, origin, rotate=rotate)
         if old.coord_sys == 'spherical' and old.pgrid.min_coords[2] >= 0:
             pgrid_new[...,2] = np.mod(pgrid_new[...,2], 2*np.pi)
-        uui = return_nan_on_error(LinearInterpolator3D(old.pgrid, old.uu))
+        uui = return_null_on_error(LinearInterpolator3D(old.pgrid, old.uu))
 
         for idx in np.argwhere(
              (pgrid_new[...,0] > old.pgrid.min_coords[0])
@@ -350,7 +350,7 @@ class EikonalSolver(object):
             u   = uui(pgrid_new[idx])
             # The np.isinf(u) check is a hack.
             # The interpolator should never return np.inf.
-            if not np.isnan(u) and not np.isinf(u):
+            if 0 <= u < np.inf:
                 self.uu[idx]       = u
                 self.is_far[idx]   = False
                 self.is_alive[idx] = set_alive
@@ -367,7 +367,7 @@ class EikonalSolver(object):
         vgrid_new = self.vgrid.map_to(old.coord_sys, origin, rotate=rotate)
         if old.coord_sys == 'spherical' and old.vgrid.min_coords[2] >= 0:
             vgrid_new[...,2] = np.mod(vgrid_new[...,2], 2*np.pi)
-        vvi = return_nan_on_error(LinearInterpolator3D(old.vgrid, old.vv))
+        vvi = return_null_on_error(LinearInterpolator3D(old.vgrid, old.vv))
         self.vv = np.apply_along_axis(vvi, -1, vgrid_new)
 
     def _get_gradient(self):
@@ -871,12 +871,12 @@ cdef class LinearInterpolator3D(object):
         return (f)
 
 
-def return_nan_on_error(func):
+def return_null_on_error(func):
     def wrapper(*args):
         try:
             return (func(*args))
         except Exception:
-            return (np.nan)
+            return (-1)
     return (wrapper)
 
 def rotation_matrix(alpha, beta, gamma):
@@ -961,6 +961,7 @@ cdef tuple update(
         active_idx = [active_i1, active_i2, active_i3]
         is_alive[active_i1, active_i2, active_i3] = True
 
+
         # Determine the indices of neighbouring nodes.
         inbr = 0
         for iax in range(3):
@@ -986,8 +987,7 @@ cdef tuple update(
             if not stencil(nbr[0], nbr[1], nbr[2], max_idx[0], max_idx[1], max_idx[2]) \
                     or is_alive[nbr[0], nbr[1], nbr[2]]:
                 continue
-            if vv[nbr[0], nbr[1], nbr[2]] > 0 \
-                    and not np.isnan(vv[nbr[0], nbr[1], nbr[2]]):
+            if vv[nbr[0], nbr[1], nbr[2]] > 0:
                 for iax in range(3):
                     switch = [0, 0, 0]
                     idrxn = 0
