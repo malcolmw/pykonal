@@ -5,10 +5,10 @@ import unittest
 
 
 def random_grid():
-    grid                 = pykonal.GridND(ndim=3)
+    grid                 = pykonal.Grid3D()
     grid.min_coords      = 100 \
        * np.sign(np.random.randint(-1, 1, 3))\
-       * np.random.rand(grid.ndim)
+       * np.random.rand(3)
     grid.node_intervals  = np.random.rand(3) * 100
     grid.npts            = np.random.randint(1, 100, 3)
 
@@ -29,6 +29,16 @@ class LinearInterpolator3DTestCase(unittest.TestCase):
 
     def tearDown(self):
         pass
+
+
+    def test_interpolate_2D(self):
+        grid                = pykonal.Grid3D(coord_sys='cartesian')
+        grid.min_coords     = 0, 0, 0
+        grid.node_intervals = 1, 1, 1
+        grid.npts           = 10, 10, 1
+        vv                  = np.random.rand(10, 10, 1)
+        interpolator = pykonal.LinearInterpolator3D(grid, vv)
+        interpolator([5, 5, 5])
 
 
     def test_interpolate(self):
@@ -97,6 +107,15 @@ class LinearInterpolator3DTestCase(unittest.TestCase):
             v1, v2 = ii.interpolate(grid.max_coords), ii(grid.max_coords)
             self.assertEqual(v1, v2)
             self.assertEqual(v1, vv[-1, -1, -1])
+
+    def test_periodic(self):
+        grid                = pykonal.Grid3D(coord_sys='spherical')
+        grid.min_coords     = 1, 0, 0
+        grid.node_intervals = 1, np.pi/20, np.pi/20
+        grid.npts           = 2, 21, 40
+        vv                  = np.cos(grid.nodes[...,2])
+        interpolator = pykonal.LinearInterpolator3D(grid, vv)
+        interpolator([1.5, np.pi/2, 39.5*np.pi/20])
 
 
 if __name__ == '__main__':

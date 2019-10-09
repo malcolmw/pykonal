@@ -344,7 +344,10 @@ class EikonalSolver(object):
             &(pgrid_new[...,1] > old.pgrid.min_coords[1])
             &(pgrid_new[...,1] < old.pgrid.max_coords[1])
             &(pgrid_new[...,2] > old.pgrid.min_coords[2])
-            &(pgrid_new[...,2] < old.pgrid.max_coords[2])
+            &(
+                 (pgrid_new[...,2] < old.pgrid.max_coords[2])
+                |(old.pgrid.is_periodic[2])
+            )
         ):
             idx = tuple(idx)
             u   = uui(pgrid_new[idx])
@@ -775,6 +778,9 @@ cdef class Heap(object):
 
 
     cpdef Py_ssize_t which(Heap self, Py_ssize_t i1, Py_ssize_t i2, Py_ssize_t i3):
+        '''
+        DEPRECATED
+        '''
         cdef int     i
         cdef Index3D idx
         for i in range(self._keys.size()):
@@ -784,6 +790,9 @@ cdef class Heap(object):
         return (-1)
 
     cpdef to_list(self):
+        '''
+        DEPRECATED
+        '''
         cdef list    output
         cdef list    keys
         output = []
@@ -798,76 +807,115 @@ cdef class Heap(object):
 
 
 cdef class LinearInterpolator3D(object):
-    cdef _REAL_t[:,:,:,:] _grid
     cdef _REAL_t[:,:,:]   _values
     cdef _REAL_t[:]       _node_intervals
     cdef _REAL_t[3]       _min_coords
     cdef _REAL_t[3]       _max_coords
-    cdef Py_ssize_t[3]    _max_idx
+    cdef Py_ssize_t[3]    _npts
+    cdef bint[3]          _is_periodic
     cdef bint[3]          _iax_isnull
 
     def __init__(self, grid, values):
-        self._grid           = grid[...]
+        self._is_periodic    = grid.is_periodic
         self._values         = values
         self._node_intervals = grid.node_intervals
-        self._max_idx        = grid.npts - 1
+        self._npts           = grid.npts
         self._min_coords     = grid.min_coords
         self._max_coords     = grid.max_coords
         self._iax_isnull     = [
             True if iax in grid.iax_null else False for iax in range(3)
         ]
 
-
     def __call__(self, point):
         return (self.interpolate(np.array(point, dtype=DTYPE_REAL)))
 
+    @property
+    def iax_isnull(self):
+        return (np.asarray(self._iax_isnull))
+
+    @property
+    def is_periodic(self):
+        return (np.asarray(self._is_periodic))
+
+    @property
+    def max_coords(self):
+        return (np.asarray(self._max_coords))
+
+
+    @property
+    def min_coords(self):
+        return (np.asarray(self._min_coords))
+
+    @property
+    def node_intervals(self):
+        return(np.asarray(self._node_intervals))
+
+    @property
+    def npts(self):
+        return (np.asarray(self._npts))
+
+    @property
+    def values(self):
+        return (np.asarray(self._values))
 
     cpdef _REAL_t interpolate(self, _REAL_t[:] point) except? _ERROR_REAL:
-        cdef _REAL_t           f000, f100, f110, f101, f111, f010, f011, f001
-        cdef _REAL_t           f00, f10, f01, f11
-        cdef _REAL_t           f0, f1
-        cdef _REAL_t           f
-        cdef _REAL_t[3]        delta, idx
-        cdef Py_ssize_t      i1, i2, i3, iax, di1, di2, di3
+        '''
+        Interpolate the contained field at *point*.
 
-        for iax in range(3):
-            if (
-                    point[iax] < self._min_coords[iax]
-                    and not np.isclose(point[iax], self._min_coords[iax])
+        :param point: Coordinates of the point to interpolate at.
+        :type point: np.ndarray[_REAL_t, ndim=1]
 
-            ) or (
-                    point[iax] > self._max_coords[iax]
-                    and not np.isclose(point[iax], self._max_coords[iax])
-            ):
-                raise(
-                    OutOfBoundsError(
-                        f'Point outside of interpolation domain requested: ({point[0]}, {point[1]}, {point[2]})'
-                    )
+        :return: Value of the field at *point*.
+        :rtype: _REAL_t
+
+        :raises: OutOfBoundsError
+        '''
+        cdef np.ndarray[_REAL_t, ndim=1] point__np
+        cdef np.ndarray[_REAL_t, ndim=1] delta, idx
+        cdef np.ndarray[_UINT_t, ndim=2] ii
+        cdef _REAL_t                     f000, f100, f110, f101, f111, f010, f011, f001
+        cdef _REAL_t                     f00, f10, f01, f11
+        cdef _REAL_t                     f0, f1
+        cdef _REAL_t                     f
+        cdef Py_ssize_t                  i1, i2, i3, iax, di1, di2, di3
+
+        point__np      = np.asarray(point)
+
+        if not np.all(
+             (
+                 (point__np >= self.min_coords)
+                &(point__np <= self.max_coords)
+             )
+            |(np.isclose(point__np, self.min_coords))
+            |(np.isclose(point__np, self.max_coords))
+            |(self.is_periodic)
+            |(self.iax_isnull)
+        ):
+            raise(
+                OutOfBoundsError(
+                    f'Point outside of interpolation domain requested: ({point[0]}, {point[1]}, {point[2]})'
                 )
-            idx[iax] = (point[iax] - self._min_coords[iax]) / self._node_intervals[iax]
-# TODO:: Accounting for node_interval is likely uneccessary here.
-            delta[iax] = (idx[iax] % 1.) * self._node_intervals[iax]
-        i1   = <Py_ssize_t> idx[0]
-        i2   = <Py_ssize_t> idx[1]
-        i3   = <Py_ssize_t> idx[2]
-        di1  = 0 if self._iax_isnull[0] == 1 or i1 == self._max_idx[0] else 1
-        di2  = 0 if self._iax_isnull[1] == 1 or i2 == self._max_idx[1] else 1
-        di3  = 0 if self._iax_isnull[2] == 1 or i3 == self._max_idx[2] else 1
-        f000 = self._values[i1,     i2,     i3]
-        f100 = self._values[i1+di1, i2,     i3]
-        f110 = self._values[i1+di1, i2+di2, i3]
-        f101 = self._values[i1+di1, i2,     i3+di3]
-        f111 = self._values[i1+di1, i2+di2, i3+di3]
-        f010 = self._values[i1,     i2+di2, i3]
-        f011 = self._values[i1,     i2+di2, i3+di3]
-        f001 = self._values[i1,     i2,     i3+di3]
-        f00  = f000 + (f100 - f000) / self._node_intervals[0] * delta[0]
-        f10  = f010 + (f110 - f010) / self._node_intervals[0] * delta[0]
-        f01  = f001 + (f101 - f001) / self._node_intervals[0] * delta[0]
-        f11  = f011 + (f111 - f011) / self._node_intervals[0] * delta[0]
-        f0   = f00  + (f10  - f00)  / self._node_intervals[1] * delta[1]
-        f1   = f01  + (f11  - f01)  / self._node_intervals[1] * delta[1]
-        f    = f0   + (f1   - f0)   / self._node_intervals[2] * delta[2]
+            )
+        idx     = (point__np - self.min_coords) / self.node_intervals
+        ii      = np.zeros((3,2), dtype=DTYPE_UINT)
+        ii[:,0] = idx.astype(DTYPE_UINT)  * ~self.iax_isnull
+        ii[:,1] = (ii[:,0]+1) % self.npts * ~self.iax_isnull
+        delta   = idx % 1
+        f000    = self._values[ii[0,0], ii[1,0], ii[2,0]]
+        f100    = self._values[ii[0,1], ii[1,0], ii[2,0]]
+        f110    = self._values[ii[0,1], ii[1,1], ii[2,0]]
+        f101    = self._values[ii[0,1], ii[1,0], ii[2,1]]
+        f111    = self._values[ii[0,1], ii[1,1], ii[2,1]]
+        f010    = self._values[ii[0,0], ii[1,1], ii[2,0]]
+        f011    = self._values[ii[0,0], ii[1,1], ii[2,1]]
+        f001    = self._values[ii[0,0], ii[1,0], ii[2,1]]
+        f00     = f000 + (f100 - f000) * delta[0]
+        f10     = f010 + (f110 - f010) * delta[0]
+        f01     = f001 + (f101 - f001) * delta[0]
+        f11     = f011 + (f111 - f011) * delta[0]
+        f0      = f00  + (f10  - f00)  * delta[1]
+        f1      = f01  + (f11  - f01)  * delta[1]
+        f       = f0   + (f1   - f0)   * delta[2]
         return (f)
 
 
