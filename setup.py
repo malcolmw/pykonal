@@ -17,7 +17,7 @@ author          = 'Malcolm C. A. White'
 requires_python = '>=3'
 packages        = ['pykonal']
 package_data    = {
-    'pykonal': ['data/marmousi_2d.npz', 'tests/data/*'],
+    'pykonal': ['data/*', 'data/marmousi2/*', 'tests/data/*'],
 }
 required        = ['cython', 'numpy', 'scipy']
 extras          = {'tests': ['nose']}
