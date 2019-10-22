@@ -17,11 +17,11 @@ author          = 'Malcolm C. A. White'
 requires_python = '>=3'
 packages        = ['pykonal']
 package_data    = {
-    'pykonal': ['data/marmousi_2d.npz', 'tests/data/*'],
+    'pykonal': ['data/*', 'data/marmousi2/*', 'tests/data/*'],
 }
 required        = ['cython', 'numpy', 'scipy']
 extras          = {'tests': ['nose']}
-ext_modules     = cythonize('pykonal/pykonal.pyx')
+ext_modules     = cythonize('pykonal/core.pyx')
 include_dirs    = [np.get_include()]
 license         = 'GNU GPLv3'
 
