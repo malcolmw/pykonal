@@ -218,16 +218,19 @@ class EikonalSolver(object):
                         'to lie entirely within the velocity grid'
                     )
                 )
-            vvp  = np.zeros(self.pgrid.npts, dtype=DTYPE_REAL)
-            vi    = LinearInterpolator3D(self.vgrid, self.vv).interpolate
-            pgrid = self.pgrid[...]
-            for i1 in range(self.pgrid.npts[0]):
-                for i2 in range(self.pgrid.npts[1]):
-                    for i3 in range(self.pgrid.npts[2]):
-                        vvp[i1, i2, i3] = vi(pgrid[i1, i2, i3])
-            if np.any(np.isinf(vvp)):
-                raise (ValueError('Velocity model corrupted on interpolationg.'))
-            self._vvp = vvp
+            if self.vgrid == self.pgrid:
+                self._vvp = self.vv
+            else:
+                vvp  = np.zeros(self.pgrid.npts, dtype=DTYPE_REAL)
+                vi    = LinearInterpolator3D(self.vgrid, self.vv).interpolate
+                pgrid = self.pgrid[...]
+                for i1 in range(self.pgrid.npts[0]):
+                    for i2 in range(self.pgrid.npts[1]):
+                        for i3 in range(self.pgrid.npts[2]):
+                            vvp[i1, i2, i3] = vi(pgrid[i1, i2, i3])
+                if np.any(np.isinf(vvp)):
+                    raise (ValueError('Velocity model corrupted on interpolationg.'))
+                self._vvp = vvp
         return (self._vvp)
 
 
@@ -655,8 +658,21 @@ class Grid3D(object):
             raise (NotImplementedError())
 
 
+    def __eq__(self, other):
+        if not isinstance(other, Grid3D):
+            return (False)
+        if (
+            np.all(self.min_coords == other.min_coords)
+            and np.all(self.node_intervals == other.node_intervals)
+            and np.all(self.npts == other.npts)
+        ):
+            return (True)
+        else:
+            return (False)
+
     def __getitem__(self, key):
         return (self.nodes[key])
+
 
 
 cdef class Heap(object):
