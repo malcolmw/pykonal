@@ -871,44 +871,46 @@ cdef class LinearInterpolator3D(object):
         :raises: OutOfBoundsError
         '''
         cdef np.ndarray[_REAL_t, ndim=1] point__np
-        cdef np.ndarray[_REAL_t, ndim=1] delta, idx
-        cdef np.ndarray[_UINT_t, ndim=2] ii
+        cdef _REAL_t[3]                  delta, idx
         cdef _REAL_t                     f000, f100, f110, f101, f111, f010, f011, f001
         cdef _REAL_t                     f00, f10, f01, f11
         cdef _REAL_t                     f0, f1
         cdef _REAL_t                     f
+        cdef Py_ssize_t[3][2]            ii
         cdef Py_ssize_t                  i1, i2, i3, iax, di1, di2, di3
 
-        point__np      = np.asarray(point)
+        point__np = np.asarray(point)
 
-        if not np.all(
-             (
-                 (point__np >= self.min_coords)
-                &(point__np <= self.max_coords)
-             )
-            |(np.isclose(point__np, self.min_coords))
-            |(np.isclose(point__np, self.max_coords))
-            |(self.is_periodic)
-            |(self.iax_isnull)
-        ):
-            raise(
-                OutOfBoundsError(
-                    f'Point outside of interpolation domain requested: ({point[0]}, {point[1]}, {point[2]})'
+        for iax in range(3):
+            if (
+                (
+                    point[iax] < self._min_coords[iax]
+                    or point[iax] > self._max_coords[iax]
                 )
-            )
-        idx     = (point__np - self.min_coords) / self.node_intervals
-        ii      = np.zeros((3,2), dtype=DTYPE_UINT)
-        ii[:,0] = idx.astype(DTYPE_UINT)  * ~self.iax_isnull
-        ii[:,1] = (ii[:,0]+1) % self.npts * ~self.iax_isnull
-        delta   = idx % 1
-        f000    = self._values[ii[0,0], ii[1,0], ii[2,0]]
-        f100    = self._values[ii[0,1], ii[1,0], ii[2,0]]
-        f110    = self._values[ii[0,1], ii[1,1], ii[2,0]]
-        f101    = self._values[ii[0,1], ii[1,0], ii[2,1]]
-        f111    = self._values[ii[0,1], ii[1,1], ii[2,1]]
-        f010    = self._values[ii[0,0], ii[1,1], ii[2,0]]
-        f011    = self._values[ii[0,0], ii[1,1], ii[2,1]]
-        f001    = self._values[ii[0,0], ii[1,0], ii[2,1]]
+                and not self._is_periodic[iax]
+                and not self._iax_isnull[iax]
+            ):
+                raise(
+                    OutOfBoundsError(
+                        f'Point outside of interpolation domain requested: ({point[0]}, {point[1]}, {point[2]})'
+                    )
+                )
+            idx[iax]   = (point[iax] - self._min_coords[iax]) / self._node_intervals[iax]
+            if self._iax_isnull[iax]:
+                ii[iax][0] = 0
+                ii[iax][1] = 0
+            else:
+                ii[iax][0]  = <Py_ssize_t>idx[iax]
+                ii[iax][1]  = <Py_ssize_t>(ii[iax][0]+1) % self._npts[iax]
+            delta[iax] = idx[iax] % 1
+        f000    = self._values[ii[0][0], ii[1][0], ii[2][0]]
+        f100    = self._values[ii[0][1], ii[1][0], ii[2][0]]
+        f110    = self._values[ii[0][1], ii[1][1], ii[2][0]]
+        f101    = self._values[ii[0][1], ii[1][0], ii[2][1]]
+        f111    = self._values[ii[0][1], ii[1][1], ii[2][1]]
+        f010    = self._values[ii[0][0], ii[1][1], ii[2][0]]
+        f011    = self._values[ii[0][0], ii[1][1], ii[2][1]]
+        f001    = self._values[ii[0][0], ii[1][0], ii[2][1]]
         f00     = f000 + (f100 - f000) * delta[0]
         f10     = f010 + (f110 - f010) * delta[0]
         f01     = f001 + (f101 - f001) * delta[0]
