@@ -302,6 +302,8 @@ class EikonalSolver(object):
                 if uu.interpolate(point_2last) <= uu.interpolate(point_last):
                     break
             except OutOfBoundsError:
+                for i in range(ray.size()-1):
+                    free(ray[i])
                 raise (
                     OutOfBoundsError(
                         f'Ray went out of bounds: '
