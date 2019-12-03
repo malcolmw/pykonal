@@ -238,6 +238,7 @@ class EikonalSolver(object):
         '''
         '''
         self._update()
+        self._uu = np.ma.masked_invalid(self.uu)
 
 
     def trace_ray(self, end, step_size=None):
