@@ -325,86 +325,74 @@ cdef class EikonalSolver(object):
                             close.sift_down(0, close.heap_index[nbr[0], nbr[1], nbr[2]])
 
 
-    #cpdef np.ndarray[constants.REAL_t, ndim=2] trace_ray(
-    #        EikonalSolver self,
-    #        constants.REAL_t[:] end
-    #):
-    #    '''
-    #    Trace the ray ending at *end*.
+    cpdef np.ndarray[constants.REAL_t, ndim=2] trace_ray(
+            EikonalSolver self,
+            constants.REAL_t[:] end
+    ):
+        '''
+        Trace the ray ending at *end*.
 
-    #    This method traces the ray that ends at *end* in reverse
-    #    direction by taking small steps along the path of steepest
-    #    travel-time descent. The resulting ray is reversed before being
-    #    returned, so it is in the normal forward-time orientation.
+        This method traces the ray that ends at *end* in reverse
+        direction by taking small steps along the path of steepest
+        travel-time descent. The resulting ray is reversed before being
+        returned, so it is in the normal forward-time orientation.
 
-    #    :param end: Coordinates of the ray's end point.
-    #    :type end: tuple, list, np.ndarray
+        :param end: Coordinates of the ray's end point.
+        :type end: tuple, list, np.ndarray
 
-    #    :param step_size: The distance between points on the ray.
-    #        The smaller this value is the more accurate the resulting
-    #        ray will be. By default, this parameter is assigned the
-    #        smallest node interval of the propagation grid.
-    #    :type step_size: float, optional
+        :param step_size: The distance between points on the ray.
+            The smaller this value is the more accurate the resulting
+            ray will be. By default, this parameter is assigned the
+            smallest node interval of the propagation grid.
+        :type step_size: float, optional
 
-    #    :return: The ray path ending at *end*.
-    #    :rtype:  np.ndarray(Nx3)
-    #    '''
-    #    cdef cpp_vector[constants.REAL_t *]       ray
-    #    cdef constants.REAL_t                     g0, g1, g2, norm
-    #    cdef constants.REAL_t                     *point_new
-    #    cdef constants.REAL_t[3]                  point_last, point_2last
-    #    cdef Py_ssize_t                  i
-    #    cdef np.ndarray[constants.REAL_t, ndim=2] ray_np
+        :return: The ray path ending at *end*.
+        :rtype:  np.ndarray(Nx3)
+        '''
+        cdef cpp_vector[constants.REAL_t *]       ray
+        cdef constants.REAL_t                     norm
+        cdef constants.REAL_t                     *point_new
+        cdef constants.REAL_t[3]                  gg, point_last, point_2last
+        cdef Py_ssize_t                           idx, jdx
+        cdef np.ndarray[constants.REAL_t, ndim=2] ray_np
+        cdef field.VectorField3D                  grad
+        cdef field.ScalarField3D                  traveltime
 
-    #    point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
-    #    point_new[0], point_new[1], point_new[2] = end
-    #    ray.push_back(point_new)
-    #    if step_size is None:
-    #        step_size = self._get_step_size()
-    #    gg = self._get_gradient()
-    #    grad_0 = LinearInterpolator3D(self.pgrid, gg[...,0].astype(constants.DTYPE_REAL))
-    #    grad_1 = LinearInterpolator3D(self.pgrid, gg[...,1].astype(constants.DTYPE_REAL))
-    #    grad_2 = LinearInterpolator3D(self.pgrid, gg[...,2].astype(constants.DTYPE_REAL))
-    #    # Create an interpolator for the travel-time field
-    #    uu = LinearInterpolator3D(self.pgrid, self.uu)
-    #    point_last   = ray.back()
-    #    while True:
-    #        g0   = grad_0.interpolate(point_last)
-    #        g1   = grad_1.interpolate(point_last)
-    #        g2   = grad_2.interpolate(point_last)
-    #        norm = libc.math.sqrt(g0**2 + g1**2 + g2**2)
-    #        g0  /= norm
-    #        g1  /= norm
-    #        g2  /= norm
-    #        if self.coord_sys == 'spherical':
-    #            g1 /= point_last[0]
-    #            g2 /= point_last[0] * np.sin(point_last[1])
-    #        point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
-    #        point_new[0] = point_last[0] - step_size * g0
-    #        point_new[1] = point_last[1] - step_size * g1
-    #        point_new[2] = point_last[2] - step_size * g2
-    #        point_2last = ray.back()
-    #        ray.push_back(point_new)
-    #        point_last   = ray.back()
-    #        try:
-    #            if uu.interpolate(point_2last) <= uu.interpolate(point_last):
-    #                break
-    #        except OutOfBoundsError:
-    #            for i in range(ray.size()-1):
-    #                free(ray[i])
-    #            raise (
-    #                OutOfBoundsError(
-    #                    f'Ray went out of bounds: '
-    #                    f'{point_last[0], point_last[1], point_last[2]}'
-    #                )
-    #            )
-    #    ray_np = np.zeros((ray.size()-1, 3), dtype=constants.DTYPE_REAL)
-    #    for i in range(ray.size()-1):
-    #        ray_np[i, 0] = ray[i][0]
-    #        ray_np[i, 1] = ray[i][1]
-    #        ray_np[i, 2] = ray[i][2]
-    #        free(ray[i])
-    #    return (np.flipud(ray_np))
+        point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
+        point_new[0], point_new[1], point_new[2] = end
+        ray.push_back(point_new)
+        step_size = self.get_step_size()
+        grad = self.traveltime.gradient
+        # Create an interpolator for the travel-time field
+        traveltime = self.traveltime
+        point_last   = ray.back()
+        while True:
+            gg   = grad.value(point_last)
+            norm = libc.math.sqrt(gg[0]**2 + gg[1]**2 + gg[2]**2)
+            for idx in range(3):
+                gg[idx] /= norm
+            if self.coord_sys == 'spherical':
+                gg[1] /= point_last[0]
+                gg[2] /= point_last[0] * libc.math.sin(point_last[1])
+            point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
+            for idx in range(3):
+                point_new[idx] = point_last[idx] - step_size * gg[idx]
+            point_2last = ray.back()
+            ray.push_back(point_new)
+            point_last  = ray.back()
+            try:
+                if traveltime.value(point_2last) <= traveltime.value(point_last):
+                    break
+            except ValueError:
+                for idx in range(ray.size()-1):
+                    free(ray[idx])
+                return (None)
+        ray_np = np.zeros((ray.size()-1, 3), dtype=constants.DTYPE_REAL)
+        for idx in range(ray.size()-1):
+            for jdx in range(3):
+                ray_np[idx, jdx] = ray[idx][jdx]
+            free(ray[idx])
+        return (np.flipud(ray_np))
 #
 #
 #    def transfer_travel_times_from(self, old, origin, rotate=False, set_alive=False):
@@ -468,7 +456,7 @@ cdef class EikonalSolver(object):
 #
 #
     def get_step_size(self):
-        return (self.norm[~np.isclose(self.norm, 0)].min() / 2)
+        return (self.norm[~np.isclose(self.norm, 0)].min() / 4)
 
 def return_null_on_error(func):
     def wrapper(*args):

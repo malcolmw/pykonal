@@ -138,19 +138,19 @@ cdef class ScalarField3D(Field3D):
         cdef Py_ssize_t                  i1, i2, i3, iax, di1, di2, di3
 
         for iax in range(3):
-            #if (
-            #    (
-            #        point[iax] < self.min_coords[iax]
-            #        or point[iax] > self.max_coords[iax]
-            #    )
-            #    and not self._is_periodic[iax]
-            #    and not self._iax_isnull[iax]
-            #):
-            #    raise(
-            #        OutOfBoundsError(
-            #            f'Point outside of interpolation domain requested: ({point[0]}, {point[1]}, {point[2]})'
-            #        )
-            #    )
+            if (
+                (
+                    point[iax] < self.min_coords[iax]
+                    or point[iax] > self.max_coords[iax]
+                )
+           #     and not self._is_periodic[iax]
+                and not self.iax_isnull[iax]
+            ):
+                raise(
+                    ValueError(
+                        f'Point outside of interpolation domain requested: ({point[0]}, {point[1]}, {point[2]})'
+                    )
+                )
             idx[iax]   = (point[iax] - self.min_coords[iax]) / self.node_intervals[iax]
             if self.iax_isnull[iax]:
                 ii[iax][0] = 0
