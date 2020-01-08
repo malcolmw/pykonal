@@ -3,7 +3,7 @@ import numpy as np
 
 # Local imports
 from . import constants
-from . import transform
+from . import transformations
 
 # Third-party Cython imports
 cimport numpy as np
@@ -27,7 +27,7 @@ cdef class Field3D(object):
     @property
     def is_periodic(self):
         is_periodic = np.array([False, False, False])
-        if self.coord_sys == 'spherical':
+        if self.coord_sys == "spherical":
             is_periodic[2] = np.isclose(
                 self.max_coords[2]+self.node_intervals[2]-self.min_coords[2],
                 2 * np.pi
@@ -45,8 +45,11 @@ cdef class Field3D(object):
 
     @property
     def npts(self):
-        return (np.asarray(self.values.shape))
+        return (np.asarray(self._npts))
 
+    @npts.setter
+    def npts(self, value):
+        self._npts = np.asarray(value)
 
     @property
     def min_coords(self):
@@ -73,27 +76,27 @@ cdef class Field3D(object):
             )
             for idx in range(3)
         ]
-        nodes = np.meshgrid(*nodes, indexing='ij')
+        nodes = np.meshgrid(*nodes, indexing="ij")
         nodes = np.stack(nodes)
         nodes = np.moveaxis(nodes, 0, -1)
         return (nodes)
 
-    def map_to(self, coord_sys, origin, rotate=False):
-        '''
+    def transform_coordinates(self, coord_sys, translation):
+        """
         Return the coordinates of self in a new reference frame.
-        :param coord_sys: Coordinate system to transform to ('*spherical*', or '*Cartesian*')
+        :param coord_sys: Coordinate system to transform to ("*spherical*", or "*Cartesian*")
         :type coord_sys: str
-        :param origin: Coordinates of the origin of self w.r.t. the new frame of reference.
-        :type origin: 3-tuple, list, np.ndarray
-        '''
-        if self.coord_sys == 'spherical' and coord_sys.lower() == 'spherical':
-            return (transform.sph2sph(self.nodes, origin))
-        elif self.coord_sys == 'cartesian' and coord_sys.lower() == 'spherical':
-            return (transform.xyz2sph(self.nodes, origin, rotate=rotate))
-        elif self.coord_sys == 'spherical' and coord_sys.lower() == 'cartesian':
-            return (transform.sph2xyz(self.nodes, origin))
-        elif self.coord_sys == 'cartesian' and coord_sys.lower() == 'cartesian':
-            return (transform.xyz2xyz(self.nodes, origin))
+        :param translation: Coordinates of the origin of the primed frame w.r.t. the unprimed frame of reference.
+        :type translation: 3-tuple, list, np.ndarray
+        """
+        if self.coord_sys == "spherical" and coord_sys.lower() == "spherical":
+            return (transformations.sph2sph(self.nodes, translation))
+        elif self.coord_sys == "cartesian" and coord_sys.lower() == "spherical":
+            return (transformations.xyz2sph(self.nodes, translation))
+        elif self.coord_sys == "spherical" and coord_sys.lower() == "cartesian":
+            return (transformations.sph2xyz(self.nodes, translation))
+        elif self.coord_sys == "cartesian" and coord_sys.lower() == "cartesian":
+            return (transformations.xyz2xyz(self.nodes, translation))
         else:
             raise (NotImplementedError())
 
@@ -113,22 +116,41 @@ cdef class ScalarField3D(Field3D):
 
     @property
     def values(self):
-        return (None if self._values is None else np.asarray(self._values))
+        try:
+            return (np.asarray(self._values))
+        except AttributeError:
+            self._values = np.full(self.npts, fill_value=np.nan)
+        return (np.asarray(self._values))
 
     @values.setter
     def values(self, value):
+        values = np.asarray(value)
+        if not np.all(values.shape == self.npts):
+            raise (ValueError("Shape of values does not match npts attribute."))
         self._values = np.asarray(value)
 
 
-    cpdef constants.REAL_t value(ScalarField3D self, constants.REAL_t[:] point) except? -999999999999.:
-        '''
+    cpdef np.ndarray[constants.REAL_t, ndim=1] resample(ScalarField3D self, constants.REAL_t[:,:] points, constants.REAL_t null=np.nan):
+        cdef Py_ssize_t                           idx
+        cdef np.ndarray[constants.REAL_t, ndim=1] resampled
+
+        resampled = np.empty(points.shape[0], dtype=constants.DTYPE_REAL)
+
+        for idx in range(points.shape[0]):
+            resampled[idx] = self.value(points[idx], null=null)
+
+        return (resampled)
+
+
+    cpdef constants.REAL_t value(ScalarField3D self, constants.REAL_t[:] point, constants.REAL_t null=np.nan):
+        """
         Interpolate the contained field at *point*.
         :param point: Coordinates of the point to interpolate at.
         :type point: np.ndarray[_REAL_t, ndim=1]
         :return: Value of the field at *point*.
         :rtype: REAL_t
         :raises: OutOfBoundsError
-        '''
+        """
         cdef constants.REAL_t[3]         delta, idx
         cdef constants.REAL_t            f000, f100, f110, f101, f111, f010, f011, f001
         cdef constants.REAL_t            f00, f10, f01, f11
@@ -143,14 +165,10 @@ cdef class ScalarField3D(Field3D):
                     point[iax] < self.min_coords[iax]
                     or point[iax] > self.max_coords[iax]
                 )
-           #     and not self._is_periodic[iax]
+                and not self.is_periodic[iax]
                 and not self.iax_isnull[iax]
             ):
-                raise(
-                    ValueError(
-                        f'Point outside of interpolation domain requested: ({point[0]}, {point[1]}, {point[2]})'
-                    )
-                )
+                return (null)
             idx[iax]   = (point[iax] - self.min_coords[iax]) / self.node_intervals[iax]
             if self.iax_isnull[iax]:
                 ii[iax][0] = 0
@@ -177,7 +195,6 @@ cdef class ScalarField3D(Field3D):
         return (f)
 
 
-    #cpdef np.ndarray[constants.REAL_t, ndim=4] _get_gradient_cartesian(ScalarField3D self):
     cpdef VectorField3D _get_gradient_cartesian(ScalarField3D self):
         gg = np.gradient(
             self.values,
@@ -297,22 +314,29 @@ cdef class VectorField3D(Field3D):
 
     @property
     def values(self):
-        return (None if self._values is None else np.asarray(self._values))
+        try:
+            return (np.asarray(self._values))
+        except AttributeError:
+            self._values = np.full(self.npts, fill_value=np.nan)
+        return (np.asarray(self._values))
 
     @values.setter
     def values(self, value):
+        values = np.asarray(value)
+        if not np.all(values.shape == self.npts):
+            raise (ValueError("Shape of values does not match npts attribute."))
         self._values = np.asarray(value)
 
 
     cpdef np.ndarray[constants.REAL_t, ndim=1] value(VectorField3D self, constants.REAL_t[:] point):
-        '''
+        """
         Interpolate the contained field at *point*.
         :param point: Coordinates of the point to interpolate at.
         :type point: np.ndarray[_REAL_t, ndim=1]
         :return: Value of the field at *point*.
         :rtype: REAL_t
         :raises: OutOfBoundsError
-        '''
+        """
         cdef constants.REAL_t[3]         ff
         cdef constants.REAL_t[3]         delta, idx
         cdef constants.REAL_t            f000, f100, f110, f101, f111, f010, f011, f001
@@ -328,12 +352,12 @@ cdef class VectorField3D(Field3D):
             #        point[iax] < self.min_coords[iax]
             #        or point[iax] > self.max_coords[iax]
             #    )
-            #    and not self._is_periodic[iax]
+            #    and not self.is_periodic[iax]
             #    and not self._iax_isnull[iax]
             #):
             #    raise(
             #        OutOfBoundsError(
-            #            f'Point outside of interpolation domain requested: ({point[0]}, {point[1]}, {point[2]})'
+            #            f"Point outside of interpolation domain requested: ({point[0]}, {point[1]}, {point[2]})"
             #        )
             #    )
             idx[iax]   = (point[iax] - self.min_coords[iax]) / self.node_intervals[iax]

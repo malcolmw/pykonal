@@ -5,11 +5,10 @@
 import numpy as np
 
 # Local imports.
-from . import transform
 from . import constants
 
 # Cython built-in imports.
-cimport libc.math
+from libc.math cimport sqrt, sin
 from libcpp.vector cimport vector as cpp_vector
 from libc.stdlib   cimport malloc, free
 
@@ -312,7 +311,7 @@ cdef class EikonalSolver(object):
                         new = -b / (2*a)
                         count_b += 1
                     else:
-                        new = (-b + libc.math.sqrt(b**2 - 4*a*c)) / (2*a)
+                        new = (-b + sqrt(b**2 - 4*a*c)) / (2*a)
                     if new < tt[nbr[0], nbr[1], nbr[2]]:
                         tt[nbr[0], nbr[1], nbr[2]] = new
                         # Tag as Close all neighbours of Active that are not
@@ -368,12 +367,12 @@ cdef class EikonalSolver(object):
         point_last   = ray.back()
         while True:
             gg   = grad.value(point_last)
-            norm = libc.math.sqrt(gg[0]**2 + gg[1]**2 + gg[2]**2)
+            norm = sqrt(gg[0]**2 + gg[1]**2 + gg[2]**2)
             for idx in range(3):
                 gg[idx] /= norm
             if self.coord_sys == 'spherical':
                 gg[1] /= point_last[0]
-                gg[2] /= point_last[0] * libc.math.sin(point_last[1])
+                gg[2] /= point_last[0] * sin(point_last[1])
             point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
             for idx in range(3):
                 point_new[idx] = point_last[idx] - step_size * gg[idx]
@@ -393,78 +392,11 @@ cdef class EikonalSolver(object):
                 ray_np[idx, jdx] = ray[idx][jdx]
             free(ray[idx])
         return (np.flipud(ray_np))
-#
-#
-#    def transfer_travel_times_from(self, old, origin, rotate=False, set_alive=False):
-#        '''
-#        Transfer the velocity model from old EikonalSolver to self
-#
-#        :param old: The old EikonalSolver to transfer from.
-#        :type old: pykonal.EikonalSolver
-#
-#        :param origin: The coordinates of the origin of old w.r.t. to
-#            the self frame of reference.
-#        :type origin: tuple, list, np.ndarray
-#
-#        :param rotate: Rotate the coordinates?
-#        :type rotate: bool
-#
-#        :return: None
-#        :rtype: NoneType
-#
-#        '''
-#
-#        pgrid_new = self.pgrid.map_to(old.coord_sys, origin, rotate=rotate)
-#        if old.coord_sys == 'spherical' and old.pgrid.min_coords[2] >= 0:
-#            pgrid_new[...,2] = np.mod(pgrid_new[...,2], 2*np.pi)
-#        uui = return_null_on_error(LinearInterpolator3D(old.pgrid, old.uu))
-#
-#        for idx in np.argwhere(
-#             (pgrid_new[...,0] > old.pgrid.min_coords[0])
-#            &(pgrid_new[...,0] < old.pgrid.max_coords[0])
-#            &(pgrid_new[...,1] > old.pgrid.min_coords[1])
-#            &(pgrid_new[...,1] < old.pgrid.max_coords[1])
-#            &(pgrid_new[...,2] > old.pgrid.min_coords[2])
-#            &(
-#                 (pgrid_new[...,2] < old.pgrid.max_coords[2])
-#                |(old.pgrid.is_periodic[2])
-#            )
-#        ):
-#            idx = tuple(idx)
-#            u   = uui(pgrid_new[idx])
-#            # The np.isinf(u) check is a hack.
-#            # The interpolator should never return np.inf.
-#            if 0 <= u < np.inf:
-#                self.uu[idx]       = u
-#                self.is_far[idx]   = False
-#                self.is_alive[idx] = set_alive
-#                self.close.push(*idx)
-#
-#
-#    def transfer_velocity_from(self, old, origin, rotate=False):
-#        '''
-#        Transfer the velocity model from old EikonalSolver to self
-#        :param pykonal.EikonalSolver old: The old EikonalSolver to transfer from.
-#        :param tuple old_origin: The coordinates of the origin of old w.r.t. to the self frame of reference.
-#        '''
-#
-#        vgrid_new = self.vgrid.map_to(old.coord_sys, origin, rotate=rotate)
-#        if old.coord_sys == 'spherical' and old.vgrid.min_coords[2] >= 0:
-#            vgrid_new[...,2] = np.mod(vgrid_new[...,2], 2*np.pi)
-#        vvi = return_null_on_error(LinearInterpolator3D(old.vgrid, old.vv))
-#        self.vv = np.apply_along_axis(vvi, -1, vgrid_new)
-#
-#
+
+
     def get_step_size(self):
         return (self.norm[~np.isclose(self.norm, 0)].min() / 4)
 
-def return_null_on_error(func):
-    def wrapper(*args):
-        try:
-            return (func(*args))
-        except Exception:
-            return (-1)
-    return (wrapper)
 
 cdef inline bint stencil(Py_ssize_t[:] idx, Py_ssize_t[:] max_idx):
     return (
