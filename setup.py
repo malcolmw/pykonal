@@ -19,7 +19,7 @@ packages        = ["pykonal"]
 package_data    = {
     "pykonal": ["data/*", "data/marmousi2/*", "tests/data/*"],
 }
-required        = ["cython", "numpy", "scipy"]
+required        = ["cython>=0.29.14", "numpy", "scipy"]
 extras          = {"tests": ["nose"]}
 ext_modules     = cythonize(
     [
