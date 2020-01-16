@@ -6,8 +6,8 @@ from . cimport heapq
 
 cdef class EikonalSolver(object):
     cdef str                       _coord_sys
-    cdef field.ScalarField3D             _velocity
-    cdef field.ScalarField3D             _traveltime
+    cdef field.ScalarField3D       _velocity
+    cdef field.ScalarField3D       _traveltime
     cdef heapq.Heap                _close
     cdef constants.BOOL_t[:,:,:]   _is_alive
     cdef constants.BOOL_t[:,:,:]   _is_far
