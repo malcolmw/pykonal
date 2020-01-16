@@ -111,6 +111,7 @@ cdef class EikonalSolver(object):
             self._traveltime = field.ScalarField3D(coord_sys=self.coord_sys)
             self._traveltime.min_coords = self.velocity.min_coords
             self._traveltime.node_intervals = self.velocity.node_intervals
+            self._traveltime.npts = self.velocity.npts
             self._traveltime.values = np.full_like(self.velocity.values, fill_value=np.inf)
         return (self._traveltime)
 
