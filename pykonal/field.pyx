@@ -40,7 +40,7 @@ cdef class Field3D(object):
 
     @node_intervals.setter
     def node_intervals(self, value):
-        self._node_intervals = np.asarray(value)
+        self._node_intervals = np.asarray(value, dtype=constants.DTYPE_REAL)
 
 
     @property
@@ -49,7 +49,7 @@ cdef class Field3D(object):
 
     @npts.setter
     def npts(self, value):
-        self._npts = np.asarray(value)
+        self._npts = np.asarray(value, dtype=constants.DTYPE_UINT)
 
     @property
     def min_coords(self):
@@ -57,7 +57,7 @@ cdef class Field3D(object):
 
     @min_coords.setter
     def min_coords(self, value):
-        self._min_coords = np.asarray(value)
+        self._min_coords = np.asarray(value, dtype=constants.DTYPE_REAL)
 
 
     @property
@@ -124,10 +124,10 @@ cdef class ScalarField3D(Field3D):
 
     @values.setter
     def values(self, value):
-        values = np.asarray(value)
+        values = np.asarray(value, dtype=constants.DTYPE_REAL)
         if not np.all(values.shape == self.npts):
             raise (ValueError("Shape of values does not match npts attribute."))
-        self._values = np.asarray(value)
+        self._values = values
 
 
     cpdef np.ndarray[constants.REAL_t, ndim=1] resample(ScalarField3D self, constants.REAL_t[:,:] points, constants.REAL_t null=np.nan):
