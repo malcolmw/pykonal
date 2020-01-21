@@ -7,15 +7,15 @@
 import numpy as np
 
 
-def sph2sph(nodes, translation):
+def sph2sph(nodes, origin):
     '''
     Transform input spherical coordinates to new spherical coordinate
     system.
     :param nodes: Grid-node coordinates (spherical) to transform.
     :type nodes: (MxNxPx3) np.ndarray
-    :param translation: Coordinates (spherical) of the translation of the primed
+    :param origin: Coordinates (spherical) of the origin of the primed
         coordinate system w.r.t. the unprimed coordinate system.
-    :type translation: 3-tuple, list, np.ndarray
+    :type origin: 3-tuple, list, np.ndarray
     :return: Coordinates of input nodes in new (spherical) coordinate
         system.
     :rtype: (MxNxPx3) np.ndarray
@@ -23,14 +23,12 @@ def sph2sph(nodes, translation):
     xx = nodes[...,0] * np.sin(nodes[...,1]) * np.cos(nodes[...,2])
     yy = nodes[...,0] * np.sin(nodes[...,1]) * np.sin(nodes[...,2])
     zz = nodes[...,0] * np.cos(nodes[...,1])
-    translation = [
-        translation[0] * np.sin(translation[1]) * np.cos(translation[2]),
-        translation[0] * np.sin(translation[1]) * np.sin(translation[2]),
-        translation[0] * np.cos(translation[1])
-    ]
-    xx -= translation[0]
-    yy -= translation[1]
-    zz -= translation[2]
+    x0 = origin[0] * np.sin(origin[1]) * np.cos(origin[2])
+    y0 = origin[0] * np.sin(origin[1]) * np.sin(origin[2])
+    z0 = origin[0] * np.cos(origin[1])
+    xx += x0
+    yy += y0
+    zz += z0
     xyz = np.moveaxis(np.stack([xx, yy, zz]), 0, -1)
     rr  = np.sqrt(np.sum(np.square(xyz), axis=-1))
     old = np.seterr(divide='ignore', invalid='ignore')
@@ -54,6 +52,7 @@ def xyz2sph(nodes, translation):
         system.
     :rtype: (MxNxPx3) np.ndarray
     '''
+    # TODO: update arguments to take origin instead of translation
     xyz = nodes - translation
     rr  = np.sqrt(np.sum(np.square(xyz), axis=-1))
     old = np.seterr(divide='ignore', invalid='ignore')
@@ -77,6 +76,7 @@ def sph2xyz(nodes, translation):
         system.
     :rtype: (MxNxPx3) np.ndarray
     '''
+    # TODO: update arguments to take origin instead of translation
     xx  = nodes[...,0] * np.sin(nodes[...,1]) * np.cos(nodes[...,2])
     yy  = nodes[...,0] * np.sin(nodes[...,1]) * np.sin(nodes[...,2])
     zz  = nodes[...,0] * np.cos(nodes[...,1])
@@ -105,6 +105,7 @@ def xyz2xyz(nodes, translation):
         system.
     :rtype: (MxNxPx3) np.ndarray
     '''
+    # TODO: update arguments to take origin instead of translation
     return (nodes - translation)
 
 

@@ -81,22 +81,22 @@ cdef class Field3D(object):
         nodes = np.moveaxis(nodes, 0, -1)
         return (nodes)
 
-    def transform_coordinates(self, coord_sys, translation):
+    def transform_coordinates(self, coord_sys, origin):
         """
         Return the coordinates of self in a new reference frame.
         :param coord_sys: Coordinate system to transform to ("*spherical*", or "*Cartesian*")
         :type coord_sys: str
-        :param translation: Coordinates of the origin of the primed frame w.r.t. the unprimed frame of reference.
-        :type translation: 3-tuple, list, np.ndarray
+        :param origin: Coordinates of the origin of the primed frame w.r.t. the unprimed frame of reference.
+        :type origin: 3-tuple, list, np.ndarray
         """
         if self.coord_sys == "spherical" and coord_sys.lower() == "spherical":
-            return (transformations.sph2sph(self.nodes, translation))
+            return (transformations.sph2sph(self.nodes, origin))
         elif self.coord_sys == "cartesian" and coord_sys.lower() == "spherical":
-            return (transformations.xyz2sph(self.nodes, translation))
+            return (transformations.xyz2sph(self.nodes, origin))
         elif self.coord_sys == "spherical" and coord_sys.lower() == "cartesian":
-            return (transformations.sph2xyz(self.nodes, translation))
+            return (transformations.sph2xyz(self.nodes, origin))
         elif self.coord_sys == "cartesian" and coord_sys.lower() == "cartesian":
-            return (transformations.xyz2xyz(self.nodes, translation))
+            return (transformations.xyz2xyz(self.nodes, origin))
         else:
             raise (NotImplementedError())
 
