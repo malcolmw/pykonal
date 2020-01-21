@@ -350,7 +350,7 @@ cdef class EikonalSolver(object):
         :rtype:  np.ndarray(Nx3)
         '''
         cdef cpp_vector[constants.REAL_t *]       ray
-        cdef constants.REAL_t                     norm
+        cdef constants.REAL_t                     norm, step_size
         cdef constants.REAL_t                     *point_new
         cdef constants.REAL_t[3]                  gg, point_last, point_2last
         cdef Py_ssize_t                           idx, jdx
