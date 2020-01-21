@@ -215,6 +215,7 @@ cdef class ScalarField3D(Field3D):
         grad = VectorField3D(coord_sys=self.coord_sys)
         grad.min_coords = self.min_coords
         grad.node_intervals = self.node_intervals
+        grad.npts = self.npts
         grad.values = gg
         return (grad)
 
@@ -303,6 +304,7 @@ cdef class ScalarField3D(Field3D):
         grad = VectorField3D(coord_sys=self.coord_sys)
         grad.min_coords = self.min_coords
         grad.node_intervals = self.node_intervals
+        grad.npts = self.npts
         grad.values = gg
         return (grad)
 
@@ -323,7 +325,7 @@ cdef class VectorField3D(Field3D):
     @values.setter
     def values(self, value):
         values = np.asarray(value)
-        if not np.all(values.shape == self.npts):
+        if not np.all(values.shape[:3] == self.npts):
             raise (ValueError("Shape of values does not match npts attribute."))
         self._values = np.asarray(value)
 
