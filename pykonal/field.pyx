@@ -81,6 +81,16 @@ cdef class Field3D(object):
         nodes = np.moveaxis(nodes, 0, -1)
         return (nodes)
 
+    def savez(self, path):
+        np.savez_compressed(
+            path,
+            min_coords=self.min_coords,
+            node_intervals=self.node_intervals,
+            npts=self.npts,
+            values=self.values,
+            coord_sys=[self.coord_sys]
+        )
+
     def transform_coordinates(self, coord_sys, origin):
         """
         Return the coordinates of self in a new reference frame.
@@ -389,3 +399,18 @@ cdef class VectorField3D(Field3D):
             f       = f0   + (f1   - f0)   * delta[2]
             ff[iax] = f
         return (np.asarray(ff))
+
+def load(path):
+    """
+    """
+    with np.load(path) as npz:
+        coord_sys = str(npz["coord_sys"][0])
+        if len(npz["values"].shape) == 4:
+            field = VectorField3D(coord_sys=coord_sys)
+        else:
+            field = ScalarField3D(coord_sys=coord_sys)
+        field.min_coords = npz["min_coords"]
+        field.node_intervals = npz["node_intervals"]
+        field.npts = npz["npts"]
+        field.values = npz["values"]
+    return (field)
