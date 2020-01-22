@@ -142,7 +142,7 @@ cdef class ScalarField3D(Field3D):
 
     cpdef np.ndarray[constants.REAL_t, ndim=1] resample(ScalarField3D self, constants.REAL_t[:,:] points, constants.REAL_t null=np.nan):
         cdef Py_ssize_t                           idx
-        cdef np.ndarray[constants.REAL_t, ndim=1] resampled
+        cdef np.ndarray[constants.REAL_t, ndim=1] resampled # Using a MemoryViewBuffer might make this faster.
 
         resampled = np.empty(points.shape[0], dtype=constants.DTYPE_REAL)
 
