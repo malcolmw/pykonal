@@ -40,7 +40,10 @@ cdef class Field3D(object):
 
     @node_intervals.setter
     def node_intervals(self, value):
-        self._node_intervals = np.asarray(value, dtype=constants.DTYPE_REAL)
+        value = np.asarray(value, dtype=constants.DTYPE_REAL)
+        if np.any(value) <= 0:
+            raise (ValueError("All node intervals must be > 0"))
+        self._node_intervals = value
 
 
     @property
@@ -57,6 +60,8 @@ cdef class Field3D(object):
 
     @min_coords.setter
     def min_coords(self, value):
+        if self.coord_sys == "spherical" and value[0] == 0:
+            raise (ValueError("min_coords[0] must be > 0 for spherical coordinates."))
         self._min_coords = np.asarray(value, dtype=constants.DTYPE_REAL)
 
 
