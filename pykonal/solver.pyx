@@ -22,39 +22,51 @@ from . cimport field
 from . cimport heapq
 
 cdef class EikonalSolver(object):
-    '''
-    A class to solver the Eikonal equation in 3D Cartesian or
-    spherical coordinates.
+    """
+    The core class of PyKonal for solving the Eikonal equation.
 
-    Properties
-    **********
     .. autoattribute:: close
-    .. autoattribute:: iax_null
+    .. autoattribute:: coord_sys
     .. autoattribute:: is_alive
     .. autoattribute:: is_far
+    .. autoattribute:: norm
+    .. autoattribute:: step_size
+    .. autoattribute:: traveltime
+    .. autoattribute:: tt
+    .. autoattribute:: velocity
+    .. autoattribute:: vv
 
-    Methods
-    *******
-    .. automethod:: trace_ray(self, end, step_size=None)
-    '''
+    .. automethod:: solve(self)
+    .. automethod:: trace_ray(self, end)
+    """
 
-    def __init__(self, coord_sys='cartesian'):
+    def __init__(self, coord_sys="cartesian"):
         self._coord_sys = coord_sys
         self._velocity = field.ScalarField3D(coord_sys=self.coord_sys)
 
+
     @property
     def close(self):
-        '''
-        A list of node indices in the *Trial* region.
-        '''
+        """
+        [**pykonal.heapq.Heap**] Heap of node indices in *Trial*.
+        """
         if self._close is None:
             self._close = heapq.Heap(self.traveltime.values)
         return (self._close)
+
+    @property
+    def coord_sys(self):
+        """
+        [**str**] Coordinate system of solver {"Cartesian", "spherical"}.
+        """
+        return (self._coord_sys)
 
 
     @property
     def is_alive(self):
         """
+        [**numpy.ndarray**] 3D array of booleans indicating whether
+        nodes are in *Known*.
         """
         try:
             return (np.asarray(self._is_alive))
@@ -65,6 +77,8 @@ cdef class EikonalSolver(object):
     @property
     def is_far(self):
         """
+        [**numpy.ndarray**] 3D array of booleans indicating whether
+        nodes are in *Unknown*.
         """
         try:
             return (np.asarray(self._is_far))
@@ -72,16 +86,13 @@ cdef class EikonalSolver(object):
             self._is_far = np.ones(self.tt.npts, dtype=constants.DTYPE_BOOL)
         return (np.asarray(self._is_far))
 
-    @property
-    def coord_sys(self):
-        """
-        """
-        return (self._coord_sys)
 
 
     @property
     def norm(self):
         """
+        [**numpy.ndarray**] 4D array of scaling factors for gradient
+        operator.
         """
         try:
             return (np.asarray(self._norm))
@@ -97,9 +108,19 @@ cdef class EikonalSolver(object):
             self._norm = norm
         return (np.asarray(self._norm))
 
+    @property
+    def step_size(self):
+        """
+        [**float**] Step size used for ray tracing.
+        """
+        return (self.norm[~np.isclose(self.norm, 0)].min() / 4)
+
 
     @property
     def traveltime(self):
+        """
+        [**numpy.ndarray**] 3D array of traveltime values.
+        """
         if self._traveltime is None:
             self._traveltime = field.ScalarField3D(coord_sys=self.coord_sys)
             self._traveltime.min_coords = self.velocity.min_coords
@@ -111,7 +132,7 @@ cdef class EikonalSolver(object):
     @property
     def tt(self):
         """
-        Alias for self.traveltime
+        [**numpy.ndarray**] Alias for self.traveltime.
         """
         return (self.traveltime)
 
@@ -119,20 +140,24 @@ cdef class EikonalSolver(object):
     @property
     def velocity(self):
         """
+        [**numpy.ndarray**] 3D array of velocity values.
         """
         return (self._velocity)
 
     @property
     def vv(self):
         """
-        Alias for self.velocity
+        [**numpy.ndarray**] Alias for self.velocity.
         """
         return (self.velocity)
 
 
     cpdef bool_t solve(EikonalSolver self):
         """
-        The update algorithm to propagate the wavefront.
+        Solve the Eikonal equation using the FMM.
+
+        :return: Returns True upon successful execution.
+        :rtype:  bool
         """
         cdef Py_ssize_t                i, iax, idrxn, active_i1, active_i2, active_i3, iheap
         cdef Py_ssize_t[6][3]          nbrs
@@ -142,7 +167,6 @@ cdef class EikonalSolver(object):
         cdef int                       count_b = 0
         cdef int                       inbr
         cdef int[2]                    order
-        #cdef constants.Py_ssize_t[3]   max_idx
         cdef constants.REAL_t          a, b, c, bfd, ffd, new
         cdef constants.REAL_t[2]       fdu
         cdef constants.REAL_t[3]       aa, bb, cc
@@ -323,26 +347,21 @@ cdef class EikonalSolver(object):
             EikonalSolver self,
             constants.REAL_t[:] end
     ):
-        '''
+        """
         Trace the ray ending at *end*.
 
         This method traces the ray that ends at *end* in reverse
         direction by taking small steps along the path of steepest
-        travel-time descent. The resulting ray is reversed before being
+        traveltime descent. The resulting ray is reversed before being
         returned, so it is in the normal forward-time orientation.
 
         :param end: Coordinates of the ray's end point.
-        :type end: tuple, list, np.ndarray
-
-        :param step_size: The distance between points on the ray.
-            The smaller this value is the more accurate the resulting
-            ray will be. By default, this parameter is assigned the
-            smallest node interval of the propagation grid.
-        :type step_size: float, optional
+        :type end: numpy.ndarray(dtype=numpy.float)
 
         :return: The ray path ending at *end*.
-        :rtype:  np.ndarray(Nx3)
-        '''
+        :rtype:  numpyp.ndarray(shape=Nx3)
+        """
+
         cdef cpp_vector[constants.REAL_t *]       ray
         cdef constants.REAL_t                     norm, step_size
         cdef constants.REAL_t                     *point_new
@@ -355,7 +374,7 @@ cdef class EikonalSolver(object):
         point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
         point_new[0], point_new[1], point_new[2] = end
         ray.push_back(point_new)
-        step_size = self.get_step_size()
+        step_size = self.step_size
         grad = self.traveltime.gradient
         # Create an interpolator for the travel-time field
         traveltime = self.traveltime
@@ -389,8 +408,6 @@ cdef class EikonalSolver(object):
         return (np.flipud(ray_np))
 
 
-    def get_step_size(self):
-        return (self.norm[~np.isclose(self.norm, 0)].min() / 4)
 
 
 cdef inline bint stencil(Py_ssize_t[:] idx, Py_ssize_t[:] max_idx):
