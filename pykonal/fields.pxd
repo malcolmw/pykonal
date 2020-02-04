@@ -13,8 +13,8 @@ cdef class ScalarField3D(Field3D):
 
     cpdef np.ndarray[constants.REAL_t, ndim=1] resample(ScalarField3D self, constants.REAL_t[:,:] points, constants.REAL_t null=*)
     cpdef constants.REAL_t value(ScalarField3D self, constants.REAL_t[:] point, constants.REAL_t null=*)
-    cpdef VectorField3D _get_gradient_cartesian(ScalarField3D self)
-    cpdef VectorField3D _get_gradient_spherical(ScalarField3D self)
+    cpdef VectorField3D _gradient_of_cartesian(ScalarField3D self)
+    cpdef VectorField3D _gradient_of_spherical(ScalarField3D self)
 
 
 cdef class VectorField3D(Field3D):
