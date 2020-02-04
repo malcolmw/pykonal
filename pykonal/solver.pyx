@@ -22,12 +22,6 @@ from . cimport heapq
 
 DEF ERROR_REAL = -999999999999.
 
-# A simple Exception class.
-class OutOfBoundsError(Exception):
-    def __init__(self, msg=''):
-        self.msg = msg
-
-
 cdef class EikonalSolver(object):
     '''
     A class to solver the Eikonal equation in 3D Cartesian or
