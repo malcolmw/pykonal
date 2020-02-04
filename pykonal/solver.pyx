@@ -8,6 +8,7 @@ import numpy as np
 from . import constants
 
 # Cython built-in imports.
+from libcpp cimport bool as bool_t
 from libc.math cimport sqrt, sin
 from libcpp.vector cimport vector as cpp_vector
 from libc.stdlib   cimport malloc, free
@@ -129,7 +130,7 @@ cdef class EikonalSolver(object):
         return (self.velocity)
 
 
-    cpdef void solve(EikonalSolver self):
+    cpdef bool_t solve(EikonalSolver self):
         """
         The update algorithm to propagate the wavefront.
         """
@@ -315,6 +316,7 @@ cdef class EikonalSolver(object):
                             is_far[nbr[0], nbr[1], nbr[2]] = False
                         else:
                             close.sift_down(0, close.heap_index[nbr[0], nbr[1], nbr[2]])
+        return (True)
 
 
     cpdef np.ndarray[constants.REAL_t, ndim=2] trace_ray(
