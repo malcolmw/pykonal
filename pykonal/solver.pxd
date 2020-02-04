@@ -10,9 +10,9 @@ cdef class EikonalSolver(object):
     cdef str                       _coord_sys
     cdef fields.ScalarField3D      _velocity
     cdef fields.ScalarField3D      _traveltime
-    cdef heapq.Heap                _close
-    cdef constants.BOOL_t[:,:,:]   _is_alive
-    cdef constants.BOOL_t[:,:,:]   _is_far
+    cdef heapq.Heap                _trial
+    cdef constants.BOOL_t[:,:,:]   _known
+    cdef constants.BOOL_t[:,:,:]   _unknown
     cdef constants.REAL_t[:,:,:,:] _norm
     cdef constants.UINT_t[3]       _is_periodic
     cpdef bool_t solve(EikonalSolver self)

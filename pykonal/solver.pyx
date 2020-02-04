@@ -54,9 +54,9 @@ cdef class EikonalSolver(object):
        # index (0, 0, 0).
        src_idx = (0, 0, 0)
        # Remove source node from *Unknown*
-       solver.is_far[src_idx] = False
+       solver.unknown[src_idx] = False
        # Add source node to *Trial*.
-       solver.close.push(*src_idx)
+       solver.trial.push(*src_idx)
        # Solve the system.
        solver.solve()
        # Extract the traveltime values.
@@ -69,14 +69,14 @@ cdef class EikonalSolver(object):
 
 
     @property
-    def close(self):
+    def trial(self):
         """
         [*Read/Write*, :class:`pykonal.heapq.Heap`] Heap of node
         indices in *Trial*.
         """
-        if self._close is None:
-            self._close = heapq.Heap(self.traveltime.values)
-        return (self._close)
+        if self._trial is None:
+            self._trial = heapq.Heap(self.traveltime.values)
+        return (self._trial)
 
     @property
     def coord_sys(self):
@@ -88,28 +88,28 @@ cdef class EikonalSolver(object):
 
 
     @property
-    def is_alive(self):
+    def known(self):
         """
         [*Read/Write*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2), dtype=numpy.bool)] 3D array of booleans
         indicating whether nodes are in *Known*.
         """
         try:
-            return (np.asarray(self._is_alive))
+            return (np.asarray(self._known))
         except AttributeError:
-            self._is_alive = np.zeros(self.tt.npts, dtype=constants.DTYPE_BOOL)
-        return (np.asarray(self._is_alive))
+            self._known = np.zeros(self.tt.npts, dtype=constants.DTYPE_BOOL)
+        return (np.asarray(self._known))
 
     @property
-    def is_far(self):
+    def unknown(self):
         """
         [*Read/Write*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2), dtype=numpy.bool)] 3D array of booleans
         indicating whether nodes are in *Unknown*.
         """
         try:
-            return (np.asarray(self._is_far))
+            return (np.asarray(self._unknown))
         except AttributeError:
-            self._is_far = np.ones(self.tt.npts, dtype=constants.DTYPE_BOOL)
-        return (np.asarray(self._is_far))
+            self._unknown = np.ones(self.tt.npts, dtype=constants.DTYPE_BOOL)
+        return (np.asarray(self._unknown))
 
 
 
@@ -204,24 +204,24 @@ cdef class EikonalSolver(object):
         cdef constants.REAL_t[:,:,:]   tt, vv
         cdef constants.REAL_t[:,:,:,:] norm
         cdef constants.BOOL_t[:]       is_periodic,
-        cdef constants.BOOL_t[:,:,:]   is_alive, is_far
-        cdef heapq.Heap                close
+        cdef constants.BOOL_t[:,:,:]   known, unknown
+        cdef heapq.Heap                trial
 
         max_idx = self.traveltime.npts
         is_periodic = self.traveltime.is_periodic
         tt = self.traveltime.values
         vv = self.velocity.values
         norm = self.norm
-        is_alive = self.is_alive
-        is_far = self.is_far
-        close = self.close
+        known = self.known
+        unknown = self.unknown
+        trial = self.trial
 
 
-        while close.size > 0:
-            # Let Active be the point in Close with the smallest value of u
-            active_i1, active_i2, active_i3 = close.pop()
+        while trial.size > 0:
+            # Let Active be the point in Trial with the smallest value of u
+            active_i1, active_i2, active_i3 = trial.pop()
             active_idx = [active_i1, active_i2, active_i3]
-            is_alive[active_i1, active_i2, active_i3] = True
+            known[active_i1, active_i2, active_i3] = True
 
             # Determine the indices of neighbouring nodes.
             inbr = 0
@@ -241,11 +241,11 @@ cdef class EikonalSolver(object):
                             nbrs[inbr][jax] = active_idx[jax] + switch[jax]
                     inbr += 1
 
-            # Recompute the values of u at all Close neighbours of Active
+            # Recompute the values of u at all Trial neighbours of Active
             # by solving the piecewise quadratic equation.
             for i in range(6):
                 nbr    = nbrs[i]
-                if not stencil(nbr, max_idx) or is_alive[nbr[0], nbr[1], nbr[2]]:
+                if not stencil(nbr, max_idx) or known[nbr[0], nbr[1], nbr[2]]:
                     continue
                 if vv[nbr[0], nbr[1], nbr[2]] > 0:
                     for iax in range(3):
@@ -279,8 +279,8 @@ cdef class EikonalSolver(object):
                                     and (nbr[iax] < max_idx[iax] - 2 or is_periodic[iax])
                                 )
                             )\
-                                and is_alive[nbr2_i1, nbr2_i2, nbr2_i3]\
-                                and is_alive[nbr1_i1, nbr1_i2, nbr1_i3]\
+                                and known[nbr2_i1, nbr2_i2, nbr2_i3]\
+                                and known[nbr1_i1, nbr1_i2, nbr1_i3]\
                                 and tt[nbr2_i1, nbr2_i2, nbr2_i3] \
                                     <= tt[nbr1_i1, nbr1_i2, nbr1_i3]\
                             :
@@ -300,7 +300,7 @@ cdef class EikonalSolver(object):
                                     and (nbr[iax] < max_idx[iax] - 1 or is_periodic[iax])
                                 )
                             )\
-                                and is_alive[nbr1_i1, nbr1_i2, nbr1_i3]\
+                                and known[nbr1_i1, nbr1_i2, nbr1_i3]\
                             :
                                 order[idrxn] = 1
                                 fdu[idrxn] = drxns[idrxn] * (
@@ -363,14 +363,14 @@ cdef class EikonalSolver(object):
                         new = (-b + sqrt(b**2 - 4*a*c)) / (2*a)
                     if new < tt[nbr[0], nbr[1], nbr[2]]:
                         tt[nbr[0], nbr[1], nbr[2]] = new
-                        # Tag as Close all neighbours of Active that are not
+                        # Tag as Trial all neighbours of Active that are not
                         # Alive. If the neighbour is in Far, remove it from
-                        # that list and add it to Close.
-                        if is_far[nbr[0], nbr[1], nbr[2]]:
-                            close.push(nbr[0], nbr[1], nbr[2])
-                            is_far[nbr[0], nbr[1], nbr[2]] = False
+                        # that list and add it to Trial.
+                        if unknown[nbr[0], nbr[1], nbr[2]]:
+                            trial.push(nbr[0], nbr[1], nbr[2])
+                            unknown[nbr[0], nbr[1], nbr[2]] = False
                         else:
-                            close.sift_down(0, close.heap_index[nbr[0], nbr[1], nbr[2]])
+                            trial.sift_down(0, trial.heap_index[nbr[0], nbr[1], nbr[2]])
         return (True)
 
 
