@@ -1,6 +1,19 @@
 # Cython compiler directives.
 # distutils: language=c++
 
+"""
+The core module of PyKonal for solving the Eikonal equation.
+
+This module provides a single class (:class:`pykonal.solver.EikonalSolver`),
+which gets imported into the root-level namespace and can thus be
+instantiated as below:
+
+.. code-block:: python
+
+   import pykonal
+   solver = pykonal.EikonalSolver(coord_sys="cartesian")
+"""
+
 # Python thrid-party imports.
 import numpy as np
 
@@ -18,31 +31,41 @@ cimport numpy as np
 
 # Cython local imports.
 from . cimport constants
-from . cimport field
+from . cimport fields
 from . cimport heapq
 
 cdef class EikonalSolver(object):
     """
     The core class of PyKonal for solving the Eikonal equation.
 
-    .. autoattribute:: close
-    .. autoattribute:: coord_sys
-    .. autoattribute:: is_alive
-    .. autoattribute:: is_far
-    .. autoattribute:: norm
-    .. autoattribute:: step_size
-    .. autoattribute:: traveltime
-    .. autoattribute:: tt
-    .. autoattribute:: velocity
-    .. autoattribute:: vv
+    .. code-block:: python
 
-    .. automethod:: solve(self)
-    .. automethod:: trace_ray(self, end)
+       import numpy as np
+       import pykonal
+
+       # Instantiate EikonalSolver object.
+       solver = pykonal.solver.EikonalSolver(coord_sys="cartesian")
+       # Initialize EikonalSolver object's velocity attribute.
+       solver.velocity.min_coords = 0, 0, 0
+       solver.velocity.node_intervals = 1, 1, 1
+       solver.velocity.npts = 16, 16, 16
+       solver.velocity.values = np.ones(solver.velocity.npts)
+       # Initialize the traveltime field with a source at node with
+       # index (0, 0, 0).
+       src_idx = (0, 0, 0)
+       # Remove source node from *Unknown*
+       solver.is_far[src_idx] = False
+       # Add source node to *Trial*.
+       solver.close.push(*src_idx)
+       # Solve the system.
+       solver.solve()
+       # Extract the traveltime values.
+       tt = solver.traveltime.values
     """
 
     def __init__(self, coord_sys="cartesian"):
         self._coord_sys = coord_sys
-        self._velocity = field.ScalarField3D(coord_sys=self.coord_sys)
+        self._velocity = fields.ScalarField3D(coord_sys=self.coord_sys)
 
 
     @property
@@ -67,7 +90,7 @@ cdef class EikonalSolver(object):
     @property
     def is_alive(self):
         """
-        [*Read/Write*, :class:`numpy.ndarray`] 3D array of booleans
+        [*Read/Write*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2), dtype=numpy.bool)] 3D array of booleans
         indicating whether nodes are in *Known*.
         """
         try:
@@ -79,7 +102,7 @@ cdef class EikonalSolver(object):
     @property
     def is_far(self):
         """
-        [*Read/Write*, :class:`numpy.ndarray`] 3D array of booleans
+        [*Read/Write*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2), dtype=numpy.bool)] 3D array of booleans
         indicating whether nodes are in *Unknown*.
         """
         try:
@@ -93,7 +116,7 @@ cdef class EikonalSolver(object):
     @property
     def norm(self):
         """
-        [*Read-only*, :class:`numpy.ndarray`] 4D array of scaling
+        [*Read-only*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2,3), dtype=numpy.float)] 4D array of scaling
         factors for gradient operator.
         """
         try:
@@ -121,11 +144,11 @@ cdef class EikonalSolver(object):
     @property
     def traveltime(self):
         """
-        [*Read/Write*, :class:`pykonal.field.ScalarField3D`] 3D array
+        [*Read/Write*, :class:`pykonal.fields.ScalarField3D`] 3D array
         of traveltime values.
         """
         if self._traveltime is None:
-            self._traveltime = field.ScalarField3D(coord_sys=self.coord_sys)
+            self._traveltime = fields.ScalarField3D(coord_sys=self.coord_sys)
             self._traveltime.min_coords = self.velocity.min_coords
             self._traveltime.node_intervals = self.velocity.node_intervals
             self._traveltime.npts = self.velocity.npts
@@ -135,7 +158,7 @@ cdef class EikonalSolver(object):
     @property
     def tt(self):
         """
-        [*Read/Write*, :class:`pykonal.field.ScalarField3D`] Alias for
+        [*Read/Write*, :class:`pykonal.fields.ScalarField3D`] Alias for
         self.traveltime.
         """
         return (self.traveltime)
@@ -144,7 +167,7 @@ cdef class EikonalSolver(object):
     @property
     def velocity(self):
         """
-        [*Read/Write*, :class:`pykonal.field.ScalarField3D`] 3D array
+        [*Read/Write*, :class:`pykonal.fields.ScalarField3D`] 3D array
         of velocity values.
         """
         return (self._velocity)
@@ -152,7 +175,7 @@ cdef class EikonalSolver(object):
     @property
     def vv(self):
         """
-        [*Read/Write*, :class:`pykonal.field.ScalarField3D`] Alias for
+        [*Read/Write*, :class:`pykonal.fields.ScalarField3D`] Alias for
         self.velocity.
         """
         return (self.velocity)
@@ -160,6 +183,8 @@ cdef class EikonalSolver(object):
 
     cpdef bool_t solve(EikonalSolver self):
         """
+        solve(self)
+
         Solve the Eikonal equation using the FMM.
 
         :return: Returns True upon successful execution.
@@ -354,6 +379,8 @@ cdef class EikonalSolver(object):
             constants.REAL_t[:] end
     ):
         """
+        trace_ray(self, end)
+
         Trace the ray ending at *end*.
 
         This method traces the ray that ends at *end* in reverse
@@ -374,8 +401,8 @@ cdef class EikonalSolver(object):
         cdef constants.REAL_t[3]                  gg, point_last, point_2last
         cdef Py_ssize_t                           idx, jdx
         cdef np.ndarray[constants.REAL_t, ndim=2] ray_np
-        cdef field.VectorField3D                  grad
-        cdef field.ScalarField3D                  traveltime
+        cdef fields.VectorField3D                 grad
+        cdef fields.ScalarField3D                 traveltime
 
         point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
         point_new[0], point_new[1], point_new[2] = end

@@ -3,13 +3,13 @@ cimport numpy as np
 from libcpp cimport bool as bool_t
 
 from . cimport constants
-from . cimport field
+from . cimport fields
 from . cimport heapq
 
 cdef class EikonalSolver(object):
     cdef str                       _coord_sys
-    cdef field.ScalarField3D       _velocity
-    cdef field.ScalarField3D       _traveltime
+    cdef fields.ScalarField3D      _velocity
+    cdef fields.ScalarField3D      _traveltime
     cdef heapq.Heap                _close
     cdef constants.BOOL_t[:,:,:]   _is_alive
     cdef constants.BOOL_t[:,:,:]   _is_far
