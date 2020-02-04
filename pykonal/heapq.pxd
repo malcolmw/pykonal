@@ -1,6 +1,7 @@
 # distutils: language=c++
 
 from libcpp.vector cimport vector as cpp_vector
+from libcpp cimport bool as bool_t
 from . cimport constants
 
 cdef struct Index3D:
@@ -12,6 +13,6 @@ cdef class Heap(object):
     cdef Py_ssize_t[:,:,:]       _heap_index
 
     cpdef tuple pop(Heap self)
-    cpdef void push(Heap self, Py_ssize_t i1, Py_ssize_t i2, Py_ssize_t i3)
-    cpdef void sift_down(Heap self, Py_ssize_t j_start, Py_ssize_t j)
-    cpdef void sift_up(Heap self, Py_ssize_t j_start)
+    cpdef bool_t push(Heap self, Py_ssize_t i1, Py_ssize_t i2, Py_ssize_t i3)
+    cpdef bool_t sift_down(Heap self, Py_ssize_t j_start, Py_ssize_t j)
+    cpdef bool_t sift_up(Heap self, Py_ssize_t j_start)
