@@ -20,8 +20,6 @@ from . cimport constants
 from . cimport field
 from . cimport heapq
 
-DEF ERROR_REAL = -999999999999.
-
 cdef class EikonalSolver(object):
     '''
     A class to solver the Eikonal equation in 3D Cartesian or
