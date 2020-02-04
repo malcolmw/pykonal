@@ -48,7 +48,8 @@ cdef class EikonalSolver(object):
     @property
     def close(self):
         """
-        [**pykonal.heapq.Heap**] Heap of node indices in *Trial*.
+        [*Read/Write*, :class:`pykonal.heapq.Heap`] Heap of node
+        indices in *Trial*.
         """
         if self._close is None:
             self._close = heapq.Heap(self.traveltime.values)
@@ -57,7 +58,8 @@ cdef class EikonalSolver(object):
     @property
     def coord_sys(self):
         """
-        [**str**] Coordinate system of solver {"Cartesian", "spherical"}.
+        [*Read only*, :class:`str`] Coordinate system of solver
+        {"Cartesian", "spherical"}.
         """
         return (self._coord_sys)
 
@@ -65,8 +67,8 @@ cdef class EikonalSolver(object):
     @property
     def is_alive(self):
         """
-        [**numpy.ndarray**] 3D array of booleans indicating whether
-        nodes are in *Known*.
+        [*Read/Write*, :class:`numpy.ndarray`] 3D array of booleans
+        indicating whether nodes are in *Known*.
         """
         try:
             return (np.asarray(self._is_alive))
@@ -77,8 +79,8 @@ cdef class EikonalSolver(object):
     @property
     def is_far(self):
         """
-        [**numpy.ndarray**] 3D array of booleans indicating whether
-        nodes are in *Unknown*.
+        [*Read/Write*, :class:`numpy.ndarray`] 3D array of booleans
+        indicating whether nodes are in *Unknown*.
         """
         try:
             return (np.asarray(self._is_far))
@@ -91,8 +93,8 @@ cdef class EikonalSolver(object):
     @property
     def norm(self):
         """
-        [**numpy.ndarray**] 4D array of scaling factors for gradient
-        operator.
+        [*Read-only*, :class:`numpy.ndarray`] 4D array of scaling
+        factors for gradient operator.
         """
         try:
             return (np.asarray(self._norm))
@@ -111,7 +113,7 @@ cdef class EikonalSolver(object):
     @property
     def step_size(self):
         """
-        [**float**] Step size used for ray tracing.
+        [*Read only*, :class:`float`] Step size used for ray tracing.
         """
         return (self.norm[~np.isclose(self.norm, 0)].min() / 4)
 
@@ -119,7 +121,8 @@ cdef class EikonalSolver(object):
     @property
     def traveltime(self):
         """
-        [**numpy.ndarray**] 3D array of traveltime values.
+        [*Read/Write*, :class:`pykonal.field.ScalarField3D`] 3D array
+        of traveltime values.
         """
         if self._traveltime is None:
             self._traveltime = field.ScalarField3D(coord_sys=self.coord_sys)
@@ -132,7 +135,8 @@ cdef class EikonalSolver(object):
     @property
     def tt(self):
         """
-        [**numpy.ndarray**] Alias for self.traveltime.
+        [*Read/Write*, :class:`pykonal.field.ScalarField3D`] Alias for
+        self.traveltime.
         """
         return (self.traveltime)
 
@@ -140,14 +144,16 @@ cdef class EikonalSolver(object):
     @property
     def velocity(self):
         """
-        [**numpy.ndarray**] 3D array of velocity values.
+        [*Read/Write*, :class:`pykonal.field.ScalarField3D`] 3D array
+        of velocity values.
         """
         return (self._velocity)
 
     @property
     def vv(self):
         """
-        [**numpy.ndarray**] Alias for self.velocity.
+        [*Read/Write*, :class:`pykonal.field.ScalarField3D`] Alias for
+        self.velocity.
         """
         return (self.velocity)
 
@@ -356,10 +362,10 @@ cdef class EikonalSolver(object):
         returned, so it is in the normal forward-time orientation.
 
         :param end: Coordinates of the ray's end point.
-        :type end: numpy.ndarray(dtype=numpy.float)
+        :type end: numpy.ndarray(shape=(3,), dtype=numpy.float)
 
         :return: The ray path ending at *end*.
-        :rtype:  numpyp.ndarray(shape=Nx3)
+        :rtype:  numpy.ndarray(shape=(N,3), dtype=numpy.float)
         """
 
         cdef cpp_vector[constants.REAL_t *]       ray
