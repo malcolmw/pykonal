@@ -10,7 +10,7 @@ from Cython.Build import cythonize
 
 # Package meta-data.
 name            = "pykonal"
-description     = "Solver for the Eikonal equation in 3D Cartesian coordiantes."
+description     = "Solve the Eikonal equation in 3D Cartesian or spherical coordiantes."
 url             = "https://github.com/malcolmw/pykonal"
 email           = "malcolm.white@.usc.edu"
 author          = "Malcolm C. A. White"
@@ -19,7 +19,7 @@ packages        = ["pykonal"]
 package_data    = {
     "pykonal": ["data/*", "data/marmousi2/*", "tests/data/*"],
 }
-required        = ["cython>=0.29.14", "numpy", "scipy"]
+required        = ["cython>=0.29.14", "numpy"]
 extras          = {"tests": ["nose"]}
 ext_modules     = cythonize(
     [
