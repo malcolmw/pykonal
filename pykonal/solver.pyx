@@ -408,21 +408,24 @@ cdef class EikonalSolver(object):
         cdef np.ndarray[constants.REAL_t, ndim=2] ray_np
         cdef fields.VectorField3D                 grad
         cdef fields.ScalarField3D                 traveltime
+        cdef str                                  coord_sys
+
+        coord_sys = self.coord_sys
+        step_size = self.step_size
+        grad = self.traveltime.gradient
+        traveltime = self.traveltime
 
         point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
         point_new[0], point_new[1], point_new[2] = end
         ray.push_back(point_new)
-        step_size = self.step_size
-        grad = self.traveltime.gradient
-        # Create an interpolator for the travel-time field
-        traveltime = self.traveltime
         point_last   = ray.back()
+
         while True:
             gg   = grad.value(point_last)
             norm = sqrt(gg[0]**2 + gg[1]**2 + gg[2]**2)
             for idx in range(3):
                 gg[idx] /= norm
-            if self.coord_sys == 'spherical':
+            if coord_sys == 'spherical':
                 gg[1] /= point_last[0]
                 gg[2] /= point_last[0] * sin(point_last[1])
             point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
