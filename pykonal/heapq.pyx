@@ -77,7 +77,7 @@ cdef class Heap(object):
         self._values = values
 
 
-    cpdef tuple pop(Heap self):
+    cpdef (Py_ssize_t, Py_ssize_t, Py_ssize_t) pop(Heap self):
         """
         pop(self)
 

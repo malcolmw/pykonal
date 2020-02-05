@@ -21,6 +21,7 @@ import numpy as np
 from . import constants
 
 # Cython built-in imports.
+cimport cython
 from libcpp cimport bool as bool_t
 from libc.math cimport sqrt, sin
 from libcpp.vector cimport vector as cpp_vector
@@ -180,7 +181,7 @@ cdef class EikonalSolver(object):
         """
         return (self.velocity)
 
-
+    @cython.initializedcheck(False)
     cpdef bool_t solve(EikonalSolver self):
         """
         solve(self)
@@ -190,22 +191,24 @@ cdef class EikonalSolver(object):
         :return: Returns True upon successful execution.
         :rtype:  bool
         """
-        cdef Py_ssize_t                i, iax, idrxn, active_i1, active_i2, active_i3, iheap
-        cdef Py_ssize_t[6][3]          nbrs
-        cdef Py_ssize_t[3]             active_idx, nbr, switch, max_idx
-        cdef Py_ssize_t[2]             drxns = [-1, 1]
-        cdef int                       count_a = 0
-        cdef int                       count_b = 0
-        cdef int                       inbr
-        cdef int[2]                    order
-        cdef constants.REAL_t          a, b, c, bfd, ffd, new
-        cdef constants.REAL_t[2]       fdu
-        cdef constants.REAL_t[3]       aa, bb, cc
-        cdef constants.REAL_t[:,:,:]   tt, vv
-        cdef constants.REAL_t[:,:,:,:] norm
-        cdef constants.BOOL_t[:]       is_periodic,
-        cdef constants.BOOL_t[:,:,:]   known, unknown
-        cdef heapq.Heap                trial
+        cdef Py_ssize_t                           i, iax, idrxn, iheap
+        cdef Py_ssize_t[6][3]                     nbrs
+        cdef Py_ssize_t[3]                        nbr, switch, max_idx, active_idx
+        cdef Py_ssize_t[2]                        drxns = [-1, 1]
+        cdef Py_ssize_t[:,:,:]                    heap_index
+        cdef (Py_ssize_t, Py_ssize_t, Py_ssize_t) idx
+        cdef int                                  count_a = 0
+        cdef int                                  count_b = 0
+        cdef int                                  inbr
+        cdef int[2]                               order
+        cdef constants.REAL_t                     a, b, c, bfd, ffd, new
+        cdef constants.REAL_t[2]                  fdu
+        cdef constants.REAL_t[3]                  aa, bb, cc
+        cdef constants.REAL_t[:,:,:]              tt, vv
+        cdef constants.REAL_t[:,:,:,:]            norm
+        cdef constants.BOOL_t[:]                  is_periodic,
+        cdef constants.BOOL_t[:,:,:]              known, unknown
+        cdef heapq.Heap                           trial
 
         max_idx = self.traveltime.npts
         is_periodic = self.traveltime.is_periodic
@@ -215,13 +218,15 @@ cdef class EikonalSolver(object):
         known = self.known
         unknown = self.unknown
         trial = self.trial
+        heap_index = trial._heap_index
 
 
-        while trial.size > 0:
-            # Let Active be the point in Trial with the smallest value of u
-            active_i1, active_i2, active_i3 = trial.pop()
-            active_idx = [active_i1, active_i2, active_i3]
-            known[active_i1, active_i2, active_i3] = True
+        while trial._keys.size() > 0:
+            # Let Active be the point in Trial with the smallest
+            # traveltime value.
+            idx = trial.pop()
+            active_idx = [idx[0], idx[1], idx[2]]
+            known[active_idx[0], active_idx[1], active_idx[2]] = True
 
             # Determine the indices of neighbouring nodes.
             inbr = 0
@@ -241,11 +246,11 @@ cdef class EikonalSolver(object):
                             nbrs[inbr][jax] = active_idx[jax] + switch[jax]
                     inbr += 1
 
-            # Recompute the values of u at all Trial neighbours of Active
-            # by solving the piecewise quadratic equation.
+            # Recompute the traveltime values at all Trial neighbours
+            # of Active by solving the piecewise quadratic equation.
             for i in range(6):
                 nbr    = nbrs[i]
-                if not stencil(nbr, max_idx) or known[nbr[0], nbr[1], nbr[2]]:
+                if not stencil(nbr[0], nbr[1], nbr[2], max_idx[0], max_idx[1], max_idx[2]) or known[nbr[0], nbr[1], nbr[2]]:
                     continue
                 if vv[nbr[0], nbr[1], nbr[2]] > 0:
                     for iax in range(3):
@@ -370,7 +375,7 @@ cdef class EikonalSolver(object):
                             trial.push(nbr[0], nbr[1], nbr[2])
                             unknown[nbr[0], nbr[1], nbr[2]] = False
                         else:
-                            trial.sift_down(0, trial.heap_index[nbr[0], nbr[1], nbr[2]])
+                            trial.sift_down(0, heap_index[nbr[0], nbr[1], nbr[2]])
         return (True)
 
 
@@ -443,12 +448,15 @@ cdef class EikonalSolver(object):
 
 
 
-cdef inline bint stencil(Py_ssize_t[:] idx, Py_ssize_t[:] max_idx):
+cdef inline bint stencil(
+        Py_ssize_t idx0, Py_ssize_t idx1, Py_ssize_t idx2,
+        Py_ssize_t max_idx0, Py_ssize_t max_idx1, Py_ssize_t max_idx2
+):
     return (
-            (idx[0] >= 0)
-        and (idx[0] < max_idx[0])
-        and (idx[1] >= 0)
-        and (idx[1] < max_idx[1])
-        and (idx[2] >= 0)
-        and (idx[2] < max_idx[2])
+            (idx0 >= 0)
+        and (idx0 < max_idx0)
+        and (idx1 >= 0)
+        and (idx1 < max_idx1)
+        and (idx2 >= 0)
+        and (idx2 < max_idx2)
     )
