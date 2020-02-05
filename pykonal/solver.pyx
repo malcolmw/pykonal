@@ -449,6 +449,268 @@ cdef class EikonalSolver(object):
         return (np.flipud(ray_np))
 
 
+class PointSourceSolver(EikonalSolver):
+    """
+    A convenience class to improve precision when solving the common
+    problem of a point source.
+
+    This class implements a pair of complementary computational grids
+    to improve precision. A refined spherical grid centered on the
+    source is used in the near-source region. The user can specify
+    whether a Cartesian or spherical grid is used in the far field.
+    The refinement of the near-field grid will be handled automatically
+    using some reasonable values if the user does not manually configure
+    it.
+    """
+    def __init__(self, coord_sys="cartesian"):
+        super(PointSourceSolver, self).__init__(coord_sys=coord_sys)
+
+    @property
+    def dphi(self):
+        """
+        [*Read/Write*, float] Node interval (in radians) along the
+        azimuthal axis of the refined near-field grid.
+        """
+        if not hasattr(self, "_dphi"):
+            self._dphi = (2 * np.pi) / self.nphi
+        return (self._dphi)
+
+    @dphi.setter
+    def dphi(self, value):
+        self._dphi = value
+
+    @property
+    def drho(self):
+        """
+        [*Read/Write*, float] Node interval (in arbitrary distance units)
+        along the radial axis of the refined near-field grid.
+        """
+        if not hasattr(self, "_drho"):
+            if self.coord_sys == "cartesian":
+                self._drho = self.vv.node_intervals.min() / 8
+            else:
+                self._drho = self.vv.node_intervals[0] / 8
+        return (self._drho)
+
+    @drho.setter
+    def drho(self, value):
+        self._drho = value
+
+    @property
+    def dtheta(self):
+        """
+        [*Read/Write*, float] Node interval (in radians) along the
+        polar axis of the refined near-field grid.
+        """
+        if not hasattr(self, "_dtheta"):
+            self._dtheta = np.pi / (self.ntheta - 1)
+        return (self._dtheta)
+
+    @dtheta.setter
+    def dtheta(self, value):
+        self._dtheta = value
+
+    @property
+    def nphi(self):
+        """
+        [*Read*, int] Number of grid nodes along the azimuthal axis
+        of the refined near-field grid.
+        """
+        if not hasattr(self, "_nphi"):
+            self._nphi = 64
+        return (self._nphi)
+
+    @property
+    def nrho(self):
+        """
+        [*Read/Write*, int] Number of grid nodes along the radial axis
+        of the refined near-field grid.
+        """
+        if not hasattr(self, "_nrho"):
+            self._nrho = 64
+        return (self._nrho)
+
+    @nrho.setter
+    def nrho(self, value):
+        self._nrho = value
+
+    @property
+    def ntheta(self):
+        """
+        [*Read*, int] Number of grid nodes along the polar axis
+        of the refined near-field grid.
+        """
+        if not hasattr(self, "_ntheta"):
+            self._ntheta = 33
+        return (self._ntheta)
+
+    @property
+    def near_field(self):
+        """
+        [*Read/Write*, :class:`EikonalSolver`] Solver for the Eikonal
+        equation in the near-field region.
+        """
+        if not hasattr(self, "_near_field"):
+            self._near_field = EikonalSolver(coord_sys="spherical")
+        return (self._near_field)
+
+    @property
+    def src_loc(self):
+        """
+        [*Read/Write*, (float, float, float)] Location of the point
+        source in the coordinates of the far-field grid.
+        """
+        return (self._src_loc)
+
+    @src_loc.setter
+    def src_loc(self, value):
+        self._src_loc = value
+
+    def initialize_near_field_grid(self) -> bool:
+        """
+        Initialize the near-field grid.
+
+        :return: Returns True upon successful completion.
+        :rtype: bool
+        """
+        # TODO:: rho0 should be be the smallest non-zero value between
+        # The distance to the closest node and drho.
+        self.near_field.vv.min_coords = self.drho, 0, 0
+        self.near_field.vv.node_intervals = self.drho, self.dtheta, self.dphi
+        self.near_field.vv.npts = self.nrho, self.ntheta, self.nphi
+        return (True)
+
+
+    def initialize_near_field_narrow_band(self) -> bool:
+        """
+        Initialize the narrow band of the near-field grid using the
+        layer of nodes closest to the source.
+
+        :return: Returns True upon successful completion.
+        :rtype: bool
+        """
+        for it in range(self.ntheta):
+            for ip in range(self.nphi):
+                idx = (0, it, ip)
+                vv = self.near_field.vv.values[idx]
+                if not np.isnan(vv):
+                    self.near_field.tt.values[idx] = self.drho / vv
+                    self.near_field.unknown[idx] = False
+                    self.near_field.trial.push(*idx)
+
+
+    def initialize_far_field_narrow_band(self) -> bool:
+        """
+        Initialize the narrow band of the far-field grid using all the
+        nodes with finite traveltimes.
+
+        :return: Returns True upon successful completion.
+        :rtype: bool
+        """
+        # Update the FMM state variables.
+        for idx in np.argwhere(~np.isinf(self.tt.values)):
+            idx = tuple(idx)
+            self.unknown[idx] = False
+            self.trial.push(*idx)
+
+
+    def interpolate_near_field_traveltime_onto_far_field(self) -> bool:
+        """
+        Interpolate the near-field traveltime values onto the far-field
+        grid.
+
+        :return: Returns True upon successful completion.
+        :rtype: bool
+        """
+        # Transform the coordinates of the far-field grid nodes to the
+        # near-field coordinate system.
+        nodes = self.vv.transform_coordinates("spherical", self.src_loc)
+        # Find the indices of the far-field grid nodes that are inside
+        # the near-field grid.
+        bool_idx = True
+        for iax in range(3):
+            bool_idx = bool_idx &(
+                 (self.near_field.vv.iax_isnull[iax])
+                |(self.near_field.vv.is_periodic[iax])
+                |(
+                     (nodes[...,iax] >= self.near_field.vv.min_coords[iax])
+                    &(nodes[...,iax] <= self.near_field.vv.max_coords[iax])
+                )
+            )
+        idxs = np.nonzero(bool_idx)
+        # Sample the near-field taveltime field on the far-field nodes.
+        # Make sure to filter out any NaN values.
+        tt = self.near_field.tt.resample(nodes[idxs].reshape(-1, 3))
+        idxs = np.swapaxes(np.stack(idxs), 0, 1)[~np.isnan(tt)]
+        self.tt.values[(idxs[:,0], idxs[:,1], idxs[:,2])] = tt[~np.isnan(tt)]
+
+
+    def interpolate_far_field_velocity_onto_near_field(self) -> bool:
+        """
+        Interpolate the far-field velocity model onto the near-field
+        grid.
+
+        :return: Returns True upon successful completion.
+        :rtype: bool
+        """
+        # Compute the coordinates of the origin of the far-field grid
+        # with respect to the near-field coordinate system.
+        if self.coord_sys == "cartesian":
+            r0 = np.sqrt(np.sum(np.square(self.src_loc)))
+            t0 = np.pi - np.arccos(self.src_loc[2]/ r0)
+            p0 = (np.arctan2(self.src_loc[1], self.src_loc[0]) + np.pi) % (2 * np.pi)
+        else:
+            r0 = self.src_loc[0]
+            t0 = np.pi - self.src_loc[1]
+            p0 = (self.src_loc[2] + np.pi) % (2 * np.pi)
+        origin = (r0, t0, p0)
+        # Transform the coordinates of the near-field grid nodes to the
+        # far-field coordinate system.
+        nodes = self.near_field.vv.transform_coordinates(self.coord_sys, origin)
+        # Find the indices of the near-field grid nodes that are inside
+        # the far-field grid.
+        bool_idx = True
+        for iax in range(3):
+            bool_idx = bool_idx &(
+                 (self.vv.iax_isnull[iax])
+                |(self.vv.is_periodic[iax])
+                |(
+                     (nodes[...,iax] >= self.vv.min_coords[iax])
+                    &(nodes[...,iax] <= self.vv.max_coords[iax])
+                )
+            )
+        idxs = np.nonzero(bool_idx)
+        # Sample the far-field velocity model on the near-field nodes.
+        self.near_field.vv.values[idxs] = self.vv.resample(nodes[idxs].reshape(-1, 3))
+        return (True)
+
+
+    def solve(self):
+        """
+        Solve the Eikonal equation on the far-field grid using the
+        refined source grid in the near-field region.
+
+        :return: Returns True upon successful completion.
+        :rtype: bool
+        """
+        # Initialize the near-field grid.
+        self.initialize_near_field_grid()
+        # Interpolate far-field velocity model onto near-field nodes.
+        self.interpolate_far_field_velocity_onto_near_field()
+        # Initialize the narrow band of the near-field grid.
+        self.initialize_near_field_narrow_band()
+        # Propagate the wavefront through the near field.
+        self.near_field.solve()
+        # Interpolate the near-field traveltime values onto the far-field
+        # grid.
+        self.interpolate_near_field_traveltime_onto_far_field()
+        # Initialize the narrow band of the far-field grid.
+        self.initialize_far_field_narrow_band()
+        # Propagate the wavefront through the far field.
+        super(PointSourceSolver, self).solve()
+        return (True)
+
+
 
 
 cdef inline bint stencil(
