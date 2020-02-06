@@ -1,2 +1,1 @@
-from .core import *
-from . import transform
+from .solver import EikonalSolver
