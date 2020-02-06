@@ -2,11 +2,16 @@ cimport numpy as np
 
 from . cimport constants
 
+
 cdef class Field3D(object):
     cdef str                     _coord_sys
+    cdef constants.REAL_t[3]     _max_coords
     cdef constants.REAL_t[3]     _min_coords
     cdef constants.UINT_t[3]     _npts
     cdef constants.REAL_t[3]     _node_intervals
+
+    cdef void _update_max_coords(Field3D self)
+
 
 cdef class ScalarField3D(Field3D):
     cdef constants.REAL_t[:,:,:] _values
@@ -21,3 +26,6 @@ cdef class VectorField3D(Field3D):
     cdef constants.REAL_t[:,:,:,:] _values
 
     cpdef np.ndarray[constants.REAL_t, ndim=1] value(VectorField3D self, constants.REAL_t[:] point)
+
+
+cpdef Field3D load(str path)

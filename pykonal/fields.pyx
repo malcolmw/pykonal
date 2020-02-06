@@ -25,6 +25,7 @@ import numpy as np
 from . import constants
 from . import transformations
 
+
 # Third-party Cython imports
 cimport numpy as np
 
@@ -87,6 +88,7 @@ cdef class Field3D(object):
         if np.any(value) <= 0:
             raise (ValueError("All node intervals must be > 0"))
         self._node_intervals = value
+        self._update_max_coords()
 
 
     @property
@@ -101,6 +103,7 @@ cdef class Field3D(object):
     @npts.setter
     def npts(self, value):
         self._npts = np.asarray(value, dtype=constants.DTYPE_UINT)
+        self._update_max_coords()
 
     @property
     def min_coords(self):
@@ -116,6 +119,7 @@ cdef class Field3D(object):
         if self.coord_sys == "spherical" and value[0] == 0:
             raise (ValueError("min_coords[0] must be > 0 for spherical coordinates."))
         self._min_coords = np.asarray(value, dtype=constants.DTYPE_REAL)
+        self._update_max_coords()
 
 
     @property
@@ -124,7 +128,7 @@ cdef class Field3D(object):
         [*Read only*, :class:`numpy.ndarray`\ (shape=(3,), dtype=numpy.float)]
         Array specifying the upper bound of each axis.
         """
-        return ((self.min_coords + self.node_intervals * (self.npts - 1)))
+        return (np.asarray(self._max_coords))
 
 
     @property
@@ -146,6 +150,16 @@ cdef class Field3D(object):
         nodes = np.stack(nodes)
         nodes = np.moveaxis(nodes, 0, -1)
         return (nodes)
+
+
+    cdef void _update_max_coords(Field3D self):
+        cdef Py_ssize_t       iax
+        cdef constants.REAL_t dx
+
+        for iax in range(3):
+            dx = self._node_intervals[iax] * <constants.REAL_t>(self._npts[iax] - 1)
+            self._max_coords[iax] = self._min_coords[iax] + dx
+
 
     def savez(self, path):
         """
@@ -532,7 +546,7 @@ cdef class VectorField3D(Field3D):
             ff[iax] = f
         return (np.asarray(ff))
 
-def load(path):
+cpdef Field3D load(str path):
     """
     Load field data from disk.
 
