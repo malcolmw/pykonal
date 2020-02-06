@@ -223,10 +223,10 @@ cdef class ScalarField3D(Field3D):
         Value of the field at each grid node.
         """
         try:
-            return (np.asarray(self._values))
+            return (np.ma.masked_invalid(np.asarray(self._values)))
         except AttributeError:
             self._values = np.full(self.npts, fill_value=np.nan)
-        return (np.asarray(self._values))
+        return (np.ma.masked_invalid(np.asarray(self._values)))
 
     @values.setter
     def values(self, value):
