@@ -22,7 +22,6 @@ from . import constants
 
 # Cython built-in imports.
 cimport cython
-from libcpp cimport bool as bool_t
 from libc.math cimport sqrt, sin
 from libcpp.vector cimport vector as cpp_vector
 from libc.stdlib   cimport malloc, free
@@ -65,8 +64,8 @@ cdef class EikonalSolver(object):
     """
 
     def __init__(self, coord_sys="cartesian"):
-        self._coord_sys = coord_sys
-        self._velocity = fields.ScalarField3D(coord_sys=self.coord_sys)
+        self.cy_coord_sys = coord_sys
+        self.cy_velocity = fields.ScalarField3D(coord_sys=self.coord_sys)
 
 
     @property
@@ -75,9 +74,9 @@ cdef class EikonalSolver(object):
         [*Read/Write*, :class:`pykonal.heapq.Heap`] Heap of node
         indices in *Trial*.
         """
-        if self._trial is None:
-            self._trial = heapq.Heap(self.traveltime.values)
-        return (self._trial)
+        if self.cy_trial is None:
+            self.cy_trial = heapq.Heap(self.traveltime.values)
+        return (self.cy_trial)
 
     @property
     def coord_sys(self):
@@ -85,7 +84,7 @@ cdef class EikonalSolver(object):
         [*Read only*, :class:`str`] Coordinate system of solver
         {"Cartesian", "spherical"}.
         """
-        return (self._coord_sys)
+        return (self.cy_coord_sys)
 
 
     @property
@@ -95,10 +94,10 @@ cdef class EikonalSolver(object):
         indicating whether nodes are in *Known*.
         """
         try:
-            return (np.asarray(self._known))
+            return (np.asarray(self.cy_known))
         except AttributeError:
-            self._known = np.zeros(self.tt.npts, dtype=constants.DTYPE_BOOL)
-        return (np.asarray(self._known))
+            self.cy_known = np.zeros(self.tt.npts, dtype=constants.DTYPE_BOOL)
+        return (np.asarray(self.cy_known))
 
     @property
     def unknown(self):
@@ -107,10 +106,10 @@ cdef class EikonalSolver(object):
         indicating whether nodes are in *Unknown*.
         """
         try:
-            return (np.asarray(self._unknown))
+            return (np.asarray(self.cy_unknown))
         except AttributeError:
-            self._unknown = np.ones(self.tt.npts, dtype=constants.DTYPE_BOOL)
-        return (np.asarray(self._unknown))
+            self.cy_unknown = np.ones(self.tt.npts, dtype=constants.DTYPE_BOOL)
+        return (np.asarray(self.cy_unknown))
 
 
 
@@ -121,7 +120,7 @@ cdef class EikonalSolver(object):
         factors for gradient operator.
         """
         try:
-            return (np.asarray(self._norm))
+            return (np.asarray(self.cy_norm))
         except AttributeError:
             norm = np.tile(
                 self.traveltime.node_intervals,
@@ -131,8 +130,8 @@ cdef class EikonalSolver(object):
                 norm[..., 1] *= self.traveltime.nodes[..., 0]
                 norm[..., 2] *= self.traveltime.nodes[..., 0]
                 norm[..., 2] *= np.sin(self.traveltime.nodes[..., 1])
-            self._norm = norm
-        return (np.asarray(self._norm))
+            self.cy_norm = norm
+        return (np.asarray(self.cy_norm))
 
     @property
     def step_size(self):
@@ -148,13 +147,13 @@ cdef class EikonalSolver(object):
         [*Read/Write*, :class:`pykonal.fields.ScalarField3D`] 3D array
         of traveltime values.
         """
-        if self._traveltime is None:
-            self._traveltime = fields.ScalarField3D(coord_sys=self.coord_sys)
-            self._traveltime.min_coords = self.velocity.min_coords
-            self._traveltime.node_intervals = self.velocity.node_intervals
-            self._traveltime.npts = self.velocity.npts
-            self._traveltime.values = np.full_like(self.velocity.values, fill_value=np.inf)
-        return (self._traveltime)
+        if self.cy_traveltime is None:
+            self.cy_traveltime = fields.ScalarField3D(coord_sys=self.coord_sys)
+            self.cy_traveltime.min_coords = self.velocity.min_coords
+            self.cy_traveltime.node_intervals = self.velocity.node_intervals
+            self.cy_traveltime.npts = self.velocity.npts
+            self.cy_traveltime.values = np.full_like(self.velocity.values, fill_value=np.inf)
+        return (self.cy_traveltime)
 
     @property
     def tt(self):
@@ -171,7 +170,7 @@ cdef class EikonalSolver(object):
         [*Read/Write*, :class:`pykonal.fields.ScalarField3D`] 3D array
         of velocity values.
         """
-        return (self._velocity)
+        return (self.cy_velocity)
 
     @property
     def vv(self):
@@ -182,7 +181,7 @@ cdef class EikonalSolver(object):
         return (self.velocity)
 
     @cython.initializedcheck(False)
-    cpdef bool_t solve(EikonalSolver self):
+    cpdef constants.BOOL_t solve(EikonalSolver self):
         """
         solve(self)
 
@@ -206,22 +205,24 @@ cdef class EikonalSolver(object):
         cdef constants.REAL_t[3]                  aa, bb, cc
         cdef constants.REAL_t[:,:,:]              tt, vv
         cdef constants.REAL_t[:,:,:,:]            norm
-        cdef constants.BOOL_t[:]                  is_periodic,
+        cdef constants.BOOL_t[3]                  iax_isperiodic,
         cdef constants.BOOL_t[:,:,:]              known, unknown
         cdef heapq.Heap                           trial
 
-        max_idx = self.traveltime.npts
-        is_periodic = self.traveltime.is_periodic
+        for iax in range(3):
+            max_idx[iax] = <Py_ssize_t> self.cy_traveltime.cy_npts[iax]
+            iax_isperiodic[iax] = <constants.BOOL_t> self.cy_traveltime.cy_iax_isperiodic[iax]
+
         tt = self.traveltime.values
         vv = self.velocity.values
         norm = self.norm
         known = self.known
         unknown = self.unknown
         trial = self.trial
-        heap_index = trial._heap_index
+        heap_index = trial.cy_heap_index
 
 
-        while trial._keys.size() > 0:
+        while trial.cy_keys.size() > 0:
             # Let Active be the point in Trial with the smallest
             # traveltime value.
             idx = trial.pop()
@@ -235,7 +236,7 @@ cdef class EikonalSolver(object):
                 for idrxn in range(2):
                     switch[iax] = drxns[idrxn]
                     for jax in range(3):
-                        if is_periodic[jax]:
+                        if iax_isperiodic[jax]:
                             nbrs[inbr][jax] = (
                                   active_idx[jax]
                                 + switch[jax]
@@ -262,26 +263,26 @@ cdef class EikonalSolver(object):
                         for idrxn in range(2):
                             switch[iax] = drxns[idrxn]
                             nbr1_i1 = (nbr[0]+switch[0]+max_idx[0]) % max_idx[0]\
-                                if is_periodic[0] else nbr[0]+switch[0]
+                                if iax_isperiodic[0] else nbr[0]+switch[0]
                             nbr1_i2 = (nbr[1]+switch[1]+max_idx[1]) % max_idx[1]\
-                                if is_periodic[1] else nbr[1]+switch[1]
+                                if iax_isperiodic[1] else nbr[1]+switch[1]
                             nbr1_i3 = (nbr[2]+switch[2]+max_idx[2]) % max_idx[2]\
-                                if is_periodic[2] else nbr[2]+switch[2]
+                                if iax_isperiodic[2] else nbr[2]+switch[2]
                             nbr2_i1 = (nbr[0]+2*switch[0]+max_idx[0]) % max_idx[0]\
-                                if is_periodic[0] else nbr[0]+2*switch[0]
+                                if iax_isperiodic[0] else nbr[0]+2*switch[0]
                             nbr2_i2 = (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1]\
-                                if is_periodic[1] else nbr[1]+2*switch[1]
+                                if iax_isperiodic[1] else nbr[1]+2*switch[1]
                             nbr2_i3 = (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2]\
-                                if is_periodic[2] else nbr[2]+2*switch[2]
+                                if iax_isperiodic[2] else nbr[2]+2*switch[2]
                             if (
                                 (
                                    drxns[idrxn] == -1
-                                   and (nbr[iax] > 1 or is_periodic[iax])
+                                   and (nbr[iax] > 1 or iax_isperiodic[iax])
                                 )
                                 or
                                 (
                                     drxns[idrxn] == 1
-                                    and (nbr[iax] < max_idx[iax] - 2 or is_periodic[iax])
+                                    and (nbr[iax] < max_idx[iax] - 2 or iax_isperiodic[iax])
                                 )
                             )\
                                 and known[nbr2_i1, nbr2_i2, nbr2_i3]\
@@ -298,11 +299,11 @@ cdef class EikonalSolver(object):
                             elif (
                                 (
                                     drxns[idrxn] == -1
-                                    and (nbr[iax] > 0 or is_periodic[iax])
+                                    and (nbr[iax] > 0 or iax_isperiodic[iax])
                                 )
                                 or (
                                     drxns[idrxn] ==  1
-                                    and (nbr[iax] < max_idx[iax] - 1 or is_periodic[iax])
+                                    and (nbr[iax] < max_idx[iax] - 1 or iax_isperiodic[iax])
                                 )
                             )\
                                 and known[nbr1_i1, nbr1_i2, nbr1_i3]\
@@ -321,17 +322,17 @@ cdef class EikonalSolver(object):
                             # Do the update using the forward operator
                             idrxn, switch[iax] = 1, 1
                         nbr1_i1 = (nbr[0]+switch[0]+max_idx[0]) % max_idx[0]\
-                            if is_periodic[0] else nbr[0]+switch[0]
+                            if iax_isperiodic[0] else nbr[0]+switch[0]
                         nbr1_i2 = (nbr[1]+switch[1]+max_idx[1]) % max_idx[1]\
-                            if is_periodic[1] else nbr[1]+switch[1]
+                            if iax_isperiodic[1] else nbr[1]+switch[1]
                         nbr1_i3 = (nbr[2]+switch[2]+max_idx[2]) % max_idx[2]\
-                            if is_periodic[2] else nbr[2]+switch[2]
+                            if iax_isperiodic[2] else nbr[2]+switch[2]
                         nbr2_i1 = (nbr[0]+2*switch[0]+max_idx[0]) % max_idx[0]\
-                            if is_periodic[0] else nbr[0]+2*switch[0]
+                            if iax_isperiodic[0] else nbr[0]+2*switch[0]
                         nbr2_i2 = (nbr[1]+2*switch[1]+max_idx[1]) % max_idx[1]\
-                            if is_periodic[1] else nbr[1]+2*switch[1]
+                            if iax_isperiodic[1] else nbr[1]+2*switch[1]
                         nbr2_i3 = (nbr[2]+2*switch[2]+max_idx[2]) % max_idx[2]\
-                            if is_periodic[2] else nbr[2]+2*switch[2]
+                            if iax_isperiodic[2] else nbr[2]+2*switch[2]
                         if order[idrxn] == 2:
                             aa[iax] = 9 / (4*norm[nbr[0], nbr[1], nbr[2], iax] ** 2)
                             bb[iax] = (
@@ -401,14 +402,15 @@ cdef class EikonalSolver(object):
         """
 
         cdef cpp_vector[constants.REAL_t *]       ray
-        cdef constants.REAL_t                     norm, step_size
+        cdef constants.REAL_t                     norm, step_size, value, value_1back
         cdef constants.REAL_t                     *point_new
-        cdef constants.REAL_t[3]                  gg, point_last, point_2last
+        cdef constants.REAL_t[3]                  gg, point, point_1back
         cdef Py_ssize_t                           idx, jdx
         cdef np.ndarray[constants.REAL_t, ndim=2] ray_np
         cdef fields.VectorField3D                 grad
         cdef fields.ScalarField3D                 traveltime
         cdef str                                  coord_sys
+
 
         coord_sys = self.coord_sys
         step_size = self.step_size
@@ -418,24 +420,27 @@ cdef class EikonalSolver(object):
         point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
         point_new[0], point_new[1], point_new[2] = end
         ray.push_back(point_new)
-        point_last   = ray.back()
+        point = ray.back()
+        value = traveltime.value(point)
 
         while True:
-            gg   = grad.value(point_last)
+            gg   = grad.value(point)
             norm = sqrt(gg[0]**2 + gg[1]**2 + gg[2]**2)
             for idx in range(3):
                 gg[idx] /= norm
-            if coord_sys == 'spherical':
-                gg[1] /= point_last[0]
-                gg[2] /= point_last[0] * sin(point_last[1])
+            if coord_sys == "spherical":
+                gg[1] /= point[0]
+                gg[2] /= point[0] * sin(point[1])
             point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
             for idx in range(3):
-                point_new[idx] = point_last[idx] - step_size * gg[idx]
-            point_2last = ray.back()
+                point_new[idx] = point[idx] - step_size * gg[idx]
+            point_1back = ray.back()
             ray.push_back(point_new)
-            point_last  = ray.back()
+            point  = ray.back()
             try:
-                if traveltime.value(point_2last) <= traveltime.value(point_last):
+                value_1back = value
+                value = traveltime.value(point)
+                if value_1back <= value or np.isnan(value):
                     break
             except ValueError:
                 for idx in range(ray.size()-1):
@@ -631,7 +636,7 @@ class PointSourceSolver(EikonalSolver):
         for iax in range(3):
             bool_idx = bool_idx &(
                  (self.near_field.vv.iax_isnull[iax])
-                |(self.near_field.vv.is_periodic[iax])
+                |(self.near_field.vv.iax_isperiodic[iax])
                 |(
                      (nodes[...,iax] >= self.near_field.vv.min_coords[iax])
                     &(nodes[...,iax] <= self.near_field.vv.max_coords[iax])
@@ -673,7 +678,7 @@ class PointSourceSolver(EikonalSolver):
         for iax in range(3):
             bool_idx = bool_idx &(
                  (self.vv.iax_isnull[iax])
-                |(self.vv.is_periodic[iax])
+                |(self.vv.iax_isperiodic[iax])
                 |(
                      (nodes[...,iax] >= self.vv.min_coords[iax])
                     &(nodes[...,iax] <= self.vv.max_coords[iax])
