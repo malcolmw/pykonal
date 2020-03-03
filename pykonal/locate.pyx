@@ -164,11 +164,11 @@ cdef class EQLocator(object):
         else:
             raise (ValueError(f"Unrecognized phase {phase}"))
         solver = _solver.PointSourceSolver(coord_sys=self.coord_sys)
-        solver.velocity.cy_min_coords = velocity.cy_min_coords
-        solver.velocity.cy_node_intervals = velocity.cy_node_intervals
-        solver.velocity.cy_npts = velocity.cy_npts
-        solver.velocity.cy_values = velocity.cy_values
-        solver._src_loc = self.cy_stations[station_id]
+        solver.velocity.min_coords = velocity.cy_min_coords
+        solver.velocity.node_intervals = velocity.cy_node_intervals
+        solver.velocity.npts = velocity.cy_npts
+        solver.velocity.values = velocity.cy_values
+        solver.src_loc = self.cy_stations[station_id]
         solver.solve()
         fname = os.path.join(self.cy_tt_dir, f"{station_id}.{phase}.npz")
         solver.traveltime.savez(fname)
