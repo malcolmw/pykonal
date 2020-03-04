@@ -188,7 +188,7 @@ cdef class EQLocator(object):
         return (True)
     
     cpdef np.ndarray[constants.REAL_t, ndim=1] grid_search(EQLocator self):
-        values = [self.cy_arrivals[key]-self.cy_traveltimes[key].values for key in self.cy_traveltimes]
+        values = [self.cy_arrivals[key]-np.ma.masked_invalid(self.cy_traveltimes[key].values) for key in self.cy_traveltimes]
         values = np.stack(values)
         std = values.std(axis=0)
         arg_min = np.argmin(std)
