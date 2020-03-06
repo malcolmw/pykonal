@@ -1,5 +1,6 @@
 # Cython compiler directives.
 # distutils: language=c++
+# cython: profile=True
 
 
 import numpy as np
@@ -38,6 +39,7 @@ cdef class EQLocator(object):
         else:
             self.cy_tempdir_obj = None
             self.cy_tt_dir = tt_dir
+            os.makedirs(self.cy_tt_dir, exist_ok=True)
 
     def __enter__(self):
         return (self)
@@ -54,6 +56,11 @@ cdef class EQLocator(object):
         return (True)
 
 
+    cpdef constants.BOOL_t add_residual_rvs(EQLocator self, dict residual_rvs):
+        self.cy_residual_rvs = {**self.cy_residual_rvs, **residual_rvs}
+        return (True)
+
+
     cpdef constants.BOOL_t cleanup(EQLocator self):
         # If the traveltime directory is temporary, clean it up.
         if self.cy_tempdir_obj is not None:
@@ -63,6 +70,11 @@ cdef class EQLocator(object):
 
     cpdef constants.BOOL_t clear_arrivals(EQLocator self):
         self.cy_arrivals = {}
+        return (True)
+
+
+    cpdef constants.BOOL_t clear_residual_rvs(EQLocator self):
+        self.cy_residual_rvs = {}
         return (True)
         
     
@@ -122,6 +134,14 @@ cdef class EQLocator(object):
     @vp.setter
     def vp(self, value: np.ndarray):
         self.pwave_velocity = value
+
+    @property
+    def residual_rvs(self) -> dict:
+        return (self.cy_residual_rvs)
+    
+    @residual_rvs.setter
+    def residual_rvs(self, value: dict):
+        self.cy_residual_rvs = value
     
     @property
     def swave_velocity(self) -> object:
@@ -174,7 +194,7 @@ cdef class EQLocator(object):
         solver.traveltime.savez(fname)
             
     cpdef constants.BOOL_t compute_all_traveltime_lookup_tables(EQLocator self, str phase):
-        cdef tuple station_id
+        cdef str station_id
 
         for station_id in self.stations:
             self.compute_traveltime_lookup_table(station_id, phase)
@@ -241,3 +261,18 @@ cdef class EQLocator(object):
             ((6341., 6371.), (h0[1]-dx, h0[1]+dx), (h0[2]-dx, h0[2]+dx), (h0[3]-5, h0[3]+5))
         )
         return (soln.x)
+
+    cpdef constants.REAL_t log_likelihood(
+        EQLocator self,
+        constants.REAL_t[:] model
+    ):
+        cdef constants.REAL_t   t_pred, residual
+        cdef constants.REAL_t   log_likelihood = 0.0
+        cdef tuple              key
+        cdef EQLocator[:]       junk
+
+        for key in self.cy_arrivals:
+            t_pred = model[3] + self.cy_traveltimes[key].value(model[:3])
+            residual = self.cy_arrivals[key] - t_pred
+            log_likelihood = log_likelihood + self.cy_residual_rvs[key].logpdf(residual)
+        return (log_likelihood)

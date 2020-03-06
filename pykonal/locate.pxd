@@ -14,15 +14,29 @@ cdef class EQLocator(object):
     cdef fields.ScalarField3D    cy_swave_velocity
     cdef dict                    cy_arrivals
     cdef dict                    cy_traveltimes
+    cdef dict                    cy_residual_rvs
     cdef constants.REAL_t[:]     cy_arrivals_sorted
     cdef list                    cy_traveltimes_sorted
 
     cpdef constants.BOOL_t add_arrivals(EQLocator self, dict arrivals)
+    cpdef constants.BOOL_t add_residual_rvs(EQLocator self, dict residua_rvs)
     cpdef constants.BOOL_t cleanup(EQLocator self)
     cpdef constants.BOOL_t clear_arrivals(EQLocator self)
-    cpdef constants.BOOL_t compute_traveltime_lookup_table(EQLocator self, str station_id, str phase)
-    cpdef constants.BOOL_t compute_all_traveltime_lookup_tables(EQLocator self, str phase)
+    cpdef constants.BOOL_t clear_residual_rvs(EQLocator self)
+    cpdef constants.BOOL_t compute_traveltime_lookup_table(
+        EQLocator self,
+        str station_id,
+        str phase
+    )
+    cpdef constants.BOOL_t compute_all_traveltime_lookup_tables(
+        EQLocator self,
+        str phase
+    )
     cpdef constants.BOOL_t load_traveltimes(EQLocator self)
+    cpdef constants.REAL_t log_likelihood(
+        EQLocator self,
+        constants.REAL_t[:] model
+    )
     cpdef np.ndarray[constants.REAL_t, ndim=1] grid_search(EQLocator self)
     cpdef constants.REAL_t cost(EQLocator self, constants.REAL_t[:] hypocenter)
     cpdef np.ndarray[constants.REAL_t, ndim=1] locate(EQLocator self)

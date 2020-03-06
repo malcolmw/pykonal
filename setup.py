@@ -27,7 +27,8 @@ ext_modules     = cythonize(
         "pykonal/fields.pyx",
         "pykonal/heapq.pyx",
         "pykonal/locate.pyx",
-        "pykonal/solver.pyx"
+        "pykonal/solver.pyx",
+        "pykonal/stats.pyx"
     ],
     compiler_directives={
         "language_level": 3,
