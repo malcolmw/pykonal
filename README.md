@@ -1,26 +1,17 @@
 # Welcome to the *pykonal* repository!
+
 This code implements a mixed- (first- and second-) order finite-difference solver for the 3D Eikonal equation in Cartesian and spherical coordinates using the Fast-Marching Method of Sethian et al. (1996).  
     
 If you make use of this code in published work, please cite White et al. (2019).
+
+![Reflections](figures/reflection.png)
 
 ## Installation
 ```bash
 sh$> pip install .
 ```
 
-## Gallery
 
-### Marmousi2 velocity model
-![Marmousi2](figures/marmousi2.png) 
-
-### MITP2008 velocity model
-![MITP2008](figures/mit2008.png)
-
-### Tracing rays through AK135 velocity model
-![Global slice](figures/global_slice.png)  
-
-### Tracing core-mantle boundary reflections
-![Core-mantle boundary reflections](figures/reflected.png)
 
 
 ## References
