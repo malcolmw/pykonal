@@ -288,7 +288,7 @@ def id_distribution_loop(argc, cfg):
     """
 
     arrivals = load_arrivals(argc.arrivals_file)
-    event_ids = arrivals["event_id"].unique()[:8]
+    event_ids = arrivals["event_id"].unique()
     # Distribute event IDs.
     for idx in range(len(event_ids)):
         event_id = event_ids[idx]
