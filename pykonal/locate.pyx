@@ -249,16 +249,64 @@ cdef class EQLocator(object):
         return (sqrt(csum/len(arrivals)))
 
     
-    cpdef np.ndarray[constants.REAL_t, ndim=1] locate(EQLocator self):
-        cdef constants.REAL_t[4] h0
-        self.cy_arrivals_sorted = np.array([self.cy_arrivals[key] for key in sorted(self.cy_arrivals)])
-        self.cy_traveltimes_sorted = [self.cy_traveltimes[key] for key in sorted(self.cy_arrivals)]
+    cpdef np.ndarray[constants.REAL_t, ndim=1] locate(
+        EQLocator self,
+        constants.REAL_t dlat=0.1,
+        constants.REAL_t dlon=0.1,
+        constants.REAL_t dz=10,
+        constants.REAL_t dt=10
+    ):
+        """
+        Locate event using a grid search and Differential Evolution
+        Optimization to minimize the residual RMS.
+        """
+        cdef constants.REAL_t[:] h0
+        cdef constants.REAL_t    dtheta
+        cdef constants.REAL_t    dphi
+        cdef constants.REAL_t    theta_min
+        cdef constants.REAL_t    theta_max
+        cdef constants.REAL_t    phi_min
+        cdef constants.REAL_t    phi_max
+        cdef constants.REAL_t    rho_min
+        cdef constants.REAL_t    rho_max
+        cdef constants.REAL_t    t_min
+        cdef constants.REAL_t    t_max
+
+        # Pre-sort arrival times and traveltime calculators for fast
+        # lookup. This is likely ineffective at improving efficiency.
+        self.cy_arrivals_sorted = np.array([
+            self.cy_arrivals[key] for key in sorted(self.cy_arrivals)
+        ])
+        self.cy_traveltimes_sorted = [
+            self.cy_traveltimes[key] for key in sorted(self.cy_arrivals)
+        ]
+        
+        # Get an initial location estimate via grid search.
         h0 = self.grid_search()
-        dx = np.radians(0.1)
+
+        # Compute optimization bounds.
+        dtheta = np.radians(dlat)
+        dphi = np.radians(dlon)
+        delta = np.array([dz, dtheta, dphi])
+        rho_min, theta_min, phi_min = np.max(
+            np.stack([h0[:3] - delta[:3], self.grid.min_coords]),
+            axis=0
+        )
+        rho_max, theta_max, phi_max = np.min(
+            np.stack([h0[:3] + delta[:3], self.grid.max_coords]),
+            axis=0
+        )
+        t_min = h0[3] - dt
+        t_max = h0[3] + dt
+
         soln = scipy.optimize.differential_evolution(
             self.rms,
-            #((h0[0]-0.1, h0[0]+0.1), (h0[1]-0.1, h0[1]+0.1), (0, 30), (h0[3]-5, h0[3]+5))
-            ((6341., 6371.), (h0[1]-dx, h0[1]+dx), (h0[2]-dx, h0[2]+dx), (h0[3]-5, h0[3]+5))
+            (
+                (rho_min, rho_max),
+                (theta_min, theta_max),
+                (phi_min, phi_max),
+                (t_min, t_max)
+            )
         )
         return (soln.x)
 

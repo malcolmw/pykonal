@@ -39,4 +39,10 @@ cdef class EQLocator(object):
     )
     cpdef np.ndarray[constants.REAL_t, ndim=1] grid_search(EQLocator self)
     cpdef constants.REAL_t rms(EQLocator self, constants.REAL_t[:] hypocenter)
-    cpdef np.ndarray[constants.REAL_t, ndim=1] locate(EQLocator self)
+    cpdef np.ndarray[constants.REAL_t, ndim=1] locate(
+        EQLocator self,
+        constants.REAL_t dlat=*,
+        constants.REAL_t dlon=*,
+        constants.REAL_t dz=*,
+        constants.REAL_t dt=*
+    )
