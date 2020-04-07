@@ -217,7 +217,7 @@ cdef class EQLocator(object):
         time = values.mean(axis=0)[idx_min]
         return (np.array([*coords, time], dtype=_constants.DTYPE_REAL))
     
-    cpdef constants.REAL_t cost(EQLocator self, constants.REAL_t[:] hypocenter):
+    cpdef constants.REAL_t rms(EQLocator self, constants.REAL_t[:] hypocenter):
         cdef tuple                   key
         cdef Py_ssize_t              idx
         cdef constants.REAL_t        csum = 0
@@ -256,7 +256,7 @@ cdef class EQLocator(object):
         h0 = self.grid_search()
         dx = np.radians(0.1)
         soln = scipy.optimize.differential_evolution(
-            self.cost,
+            self.rms,
             #((h0[0]-0.1, h0[0]+0.1), (h0[1]-0.1, h0[1]+0.1), (0, 30), (h0[3]-5, h0[3]+5))
             ((6341., 6371.), (h0[1]-dx, h0[1]+dx), (h0[2]-dx, h0[2]+dx), (h0[3]-5, h0[3]+5))
         )
