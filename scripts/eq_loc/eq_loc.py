@@ -408,6 +408,8 @@ def write_events(dataframe, output_file):
 
     logger.debug("Saving event locations to disk.")
 
+    dataframe = dataframe.convert_dtypes()
+
     with pd.HDFStore(output_file, mode="w") as store:
         store["events"] = dataframe
 
