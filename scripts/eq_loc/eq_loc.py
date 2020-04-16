@@ -21,6 +21,15 @@ ROOT_RANK           = 0
 ID_REQUEST_TAG      = 100
 ID_TRANSMISSION_TAG = 101
 
+DTYPES = {
+    "latitude":  np.float64,
+    "longitude": np.float64,
+    "depth":     np.float64,
+    "time":      np.float64,
+    "residual":  np.float64,
+    "event_id":  np.int64
+}
+
 geo2sph = pykonal.transformations.geo2sph
 sph2geo = pykonal.transformations.sph2geo
 
@@ -408,7 +417,9 @@ def write_events(dataframe, output_file):
 
     logger.debug("Saving event locations to disk.")
 
-    dataframe = dataframe.convert_dtypes()
+    # Convert dtypes before saving event locations.
+    for field in DTYPES:
+        dataframe[field] = dataframe[field].astype(DTYPES[field])
 
     with pd.HDFStore(output_file, mode="w") as store:
         store["events"] = dataframe
