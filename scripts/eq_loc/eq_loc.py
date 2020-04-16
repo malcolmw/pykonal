@@ -283,7 +283,7 @@ def event_location_loop(argc, cfg):
         # Get residual RMS, reformat result, and append to events
         # DataFrame.
         rms = locator.rms(loc)
-        loc = sph2geo(loc)
+        loc[:3] = sph2geo(loc[:3])
         event = pd.DataFrame(
             [np.concatenate((loc, [rms, event_id]))],
             columns=columns
