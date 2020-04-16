@@ -220,6 +220,9 @@ def event_location_loop(argc, cfg):
     A worker loop to locate events.
     """
 
+    # Define columns to output.
+    columns = ["latitude", "longitude", "depth", "time", "residual", "event_id"]
+
     # Load network geometry from disk.
     stations = load_stations(argc.network_geometry)
 
@@ -274,7 +277,7 @@ def event_location_loop(argc, cfg):
         loc = sph2geo(loc)
         event = pd.DataFrame(
             [np.concatenate((loc, [rms, event_id]))],
-            columns=["latitude", "longitude", "depth", "time", "residual", "event_id"]
+            columns=columns
         )
         events = events.append(event, ignore_index=True)
 
