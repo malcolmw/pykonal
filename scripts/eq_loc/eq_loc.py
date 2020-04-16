@@ -273,8 +273,8 @@ def event_location_loop(argc, cfg):
         rms = locator.rms(loc)
         loc = sph2geo(loc)
         event = pd.DataFrame(
-            [np.append(loc, rms)],
-            columns=["latitude", "longitude", "depth", "time", "residual"]
+            [np.concatenate((loc, [rms, event_id]))],
+            columns=["latitude", "longitude", "depth", "time", "residual", "event_id"]
         )
         events = events.append(event, ignore_index=True)
 
