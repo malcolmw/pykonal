@@ -24,9 +24,11 @@ extras          = {"tests": ["nose"]}
 ext_modules     = cythonize(
     [
         "pykonal/constants.pyx",
-        "pykonal/heapq.pyx",
         "pykonal/fields.pyx",
-        "pykonal/solver.pyx"
+        "pykonal/heapq.pyx",
+        "pykonal/locate.pyx",
+        "pykonal/solver.pyx",
+        "pykonal/stats.pyx"
     ],
     compiler_directives={
         "language_level": 3,

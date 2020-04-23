@@ -1,3 +1,4 @@
+# distutils: language=c++
 """
 This module provides three classes (:class:`Field3D <pykonal.fields.Field3D>`,
 :class:`ScalarField3D <pykonal.fields.ScalarField3D>`, and
@@ -25,6 +26,7 @@ import numpy as np
 from . import constants
 from . import transformations
 
+
 # Third-party Cython imports
 cimport numpy as np
 
@@ -37,7 +39,7 @@ cdef class Field3D(object):
     """
 
     def __init__(self, coord_sys="cartesian"):
-        self._coord_sys = coord_sys
+        self.cy_coord_sys = coord_sys
 
     @property
     def coord_sys(self):
@@ -45,7 +47,7 @@ cdef class Field3D(object):
         [*Read only*, :class:`str`] Coordinate system of grid on which
         field data is represented {"Cartesian", "spherical"}.
         """
-        return (self._coord_sys)
+        return (self.cy_coord_sys)
 
     @property
     def iax_isnull(self):
@@ -54,23 +56,25 @@ cdef class Field3D(object):
         Array of booleans indicating whether each axis is null. The
         axis with only one layer of nodes in 2D problems will be null.
         """
-        return (self.npts == 1)
+        arr = np.array(
+            [self.cy_iax_isnull[iax] for iax in range(3)],
+            dtype=constants.DTYPE_BOOL
+        )
+        return (arr)
 
     @property
-    def is_periodic(self):
+    def iax_isperiodic(self):
         """
         [*Read only*, :class:`numpy.ndarray`\ (shape=(3,), dtype=numpy.bool)]
         Array of booleans indicating whether each axis is periodic. In
         practice, only the azimuthal (:math:`\phi`) axis in spherical
         coordinates will ever be periodic.
         """
-        is_periodic = np.array([False, False, False])
-        if self.coord_sys == "spherical":
-            is_periodic[2] = np.isclose(
-                self.max_coords[2]+self.node_intervals[2]-self.min_coords[2],
-                2 * np.pi
-            )
-        return (is_periodic)
+        arr = np.array(
+            [self.cy_iax_isperiodic[iax] for iax in range(3)],
+            dtype=constants.DTYPE_BOOL
+        )
+        return (arr)
 
     @property
     def node_intervals(self):
@@ -79,14 +83,16 @@ cdef class Field3D(object):
         Array of node intervals along each axis. This attribute must be
         initialized by the user.
         """
-        return (np.asarray(self._node_intervals))
+        return (np.asarray(self.cy_node_intervals))
 
     @node_intervals.setter
     def node_intervals(self, value):
         value = np.asarray(value, dtype=constants.DTYPE_REAL)
         if np.any(value) <= 0:
             raise (ValueError("All node intervals must be > 0"))
-        self._node_intervals = value
+        self.cy_node_intervals = value
+        self._update_max_coords()
+        self._update_iax_isperiodic()
 
 
     @property
@@ -96,11 +102,14 @@ cdef class Field3D(object):
         Array specifying the number of nodes along each axis. This
         attribute must be initialized by the user.
         """
-        return (np.asarray(self._npts))
+        return (np.asarray(self.cy_npts))
 
     @npts.setter
     def npts(self, value):
-        self._npts = np.asarray(value, dtype=constants.DTYPE_UINT)
+        self.cy_npts = np.asarray(value, dtype=constants.DTYPE_UINT)
+        self._update_max_coords()
+        self._update_iax_isnull()
+        self._update_iax_isperiodic()
 
     @property
     def min_coords(self):
@@ -109,13 +118,15 @@ cdef class Field3D(object):
         Array specifying the lower bound of each axis. This attribute
         must be initialized by the user.
         """
-        return (np.asarray(self._min_coords))
+        return (np.asarray(self.cy_min_coords))
 
     @min_coords.setter
     def min_coords(self, value):
         if self.coord_sys == "spherical" and value[0] == 0:
             raise (ValueError("min_coords[0] must be > 0 for spherical coordinates."))
-        self._min_coords = np.asarray(value, dtype=constants.DTYPE_REAL)
+        self.cy_min_coords = np.asarray(value, dtype=constants.DTYPE_REAL)
+        self._update_max_coords()
+        self._update_iax_isperiodic()
 
 
     @property
@@ -124,7 +135,7 @@ cdef class Field3D(object):
         [*Read only*, :class:`numpy.ndarray`\ (shape=(3,), dtype=numpy.float)]
         Array specifying the upper bound of each axis.
         """
-        return ((self.min_coords + self.node_intervals * (self.npts - 1)))
+        return (np.asarray(self.cy_max_coords))
 
 
     @property
@@ -146,6 +157,34 @@ cdef class Field3D(object):
         nodes = np.stack(nodes)
         nodes = np.moveaxis(nodes, 0, -1)
         return (nodes)
+
+
+    cdef constants.BOOL_t _update_iax_isperiodic(Field3D self):
+        if self.cy_coord_sys == "spherical":
+            self.cy_iax_isperiodic[2] = np.isclose(
+                self.cy_max_coords[2]+self.cy_node_intervals[2]-self.cy_min_coords[2],
+                2 * np.pi
+            )
+        return (True)
+
+
+    cdef constants.BOOL_t _update_iax_isnull(Field3D self):
+        cdef Py_ssize_t       iax
+
+        for iax in range(3):
+            self.cy_iax_isnull[iax] = True if self.cy_npts[iax] == 1 else False
+        return (True)
+
+
+    cdef constants.BOOL_t _update_max_coords(Field3D self):
+        cdef Py_ssize_t       iax
+        cdef constants.REAL_t dx
+
+        for iax in range(3):
+            dx = self.cy_node_intervals[iax] * <constants.REAL_t>(self.cy_npts[iax] - 1)
+            self.cy_max_coords[iax] = self.cy_min_coords[iax] + dx
+        return (True)
+
 
     def savez(self, path):
         """
@@ -223,17 +262,17 @@ cdef class ScalarField3D(Field3D):
         Value of the field at each grid node.
         """
         try:
-            return (np.asarray(self._values))
+            return (np.asarray(self.cy_values))
         except AttributeError:
-            self._values = np.full(self.npts, fill_value=np.nan)
-        return (np.asarray(self._values))
+            self.cy_values = np.full(self.npts, fill_value=np.nan)
+        return (np.asarray(self.cy_values))
 
     @values.setter
     def values(self, value):
         values = np.asarray(value, dtype=constants.DTYPE_REAL)
         if not np.all(values.shape == self.npts):
             raise (ValueError("Shape of values does not match npts attribute."))
-        self._values = values
+        self.cy_values = values
 
 
     cpdef np.ndarray[constants.REAL_t, ndim=1] resample(ScalarField3D self, constants.REAL_t[:,:] points, constants.REAL_t null=np.nan):
@@ -288,29 +327,29 @@ cdef class ScalarField3D(Field3D):
         for iax in range(3):
             if (
                 (
-                    point[iax] < self.min_coords[iax]
-                    or point[iax] > self.max_coords[iax]
+                    point[iax] < self.cy_min_coords[iax]
+                    or point[iax] > self.cy_max_coords[iax]
                 )
-                and not self.is_periodic[iax]
-                and not self.iax_isnull[iax]
+                and not self.cy_iax_isperiodic[iax]
+                and not self.cy_iax_isnull[iax]
             ):
                 return (null)
-            idx[iax]   = (point[iax] - self.min_coords[iax]) / self.node_intervals[iax]
-            if self.iax_isnull[iax]:
+            idx[iax]   = (point[iax] - self.cy_min_coords[iax]) / self.cy_node_intervals[iax]
+            if self.cy_iax_isnull[iax]:
                 ii[iax][0] = 0
                 ii[iax][1] = 0
             else:
                 ii[iax][0]  = <Py_ssize_t>idx[iax]
                 ii[iax][1]  = <Py_ssize_t>(ii[iax][0]+1) % self.npts[iax]
             delta[iax] = idx[iax] % 1
-        f000    = self.values[ii[0][0], ii[1][0], ii[2][0]]
-        f100    = self.values[ii[0][1], ii[1][0], ii[2][0]]
-        f110    = self.values[ii[0][1], ii[1][1], ii[2][0]]
-        f101    = self.values[ii[0][1], ii[1][0], ii[2][1]]
-        f111    = self.values[ii[0][1], ii[1][1], ii[2][1]]
-        f010    = self.values[ii[0][0], ii[1][1], ii[2][0]]
-        f011    = self.values[ii[0][0], ii[1][1], ii[2][1]]
-        f001    = self.values[ii[0][0], ii[1][0], ii[2][1]]
+        f000    = self.cy_values[ii[0][0], ii[1][0], ii[2][0]]
+        f100    = self.cy_values[ii[0][1], ii[1][0], ii[2][0]]
+        f110    = self.cy_values[ii[0][1], ii[1][1], ii[2][0]]
+        f101    = self.cy_values[ii[0][1], ii[1][0], ii[2][1]]
+        f111    = self.cy_values[ii[0][1], ii[1][1], ii[2][1]]
+        f010    = self.cy_values[ii[0][0], ii[1][1], ii[2][0]]
+        f011    = self.cy_values[ii[0][0], ii[1][1], ii[2][1]]
+        f001    = self.cy_values[ii[0][0], ii[1][0], ii[2][1]]
         f00     = f000 + (f100 - f000) * delta[0]
         f10     = f010 + (f110 - f010) * delta[0]
         f01     = f001 + (f101 - f001) * delta[0]
@@ -456,17 +495,17 @@ cdef class VectorField3D(Field3D):
         Value of the field at each grid node.
         """
         try:
-            return (np.asarray(self._values))
+            return (np.asarray(self.cy_values))
         except AttributeError:
-            self._values = np.full(self.npts, fill_value=np.nan)
-        return (np.asarray(self._values))
+            self.cy_values = np.full(self.npts, fill_value=np.nan)
+        return (np.asarray(self.cy_values))
 
     @values.setter
     def values(self, value):
         values = np.asarray(value)
         if not np.all(values.shape[:3] == self.npts):
             raise (ValueError("Shape of values does not match npts attribute."))
-        self._values = np.asarray(value)
+        self.cy_values = np.asarray(value)
 
 
     cpdef np.ndarray[constants.REAL_t, ndim=1] value(VectorField3D self, constants.REAL_t[:] point):
@@ -514,14 +553,14 @@ cdef class VectorField3D(Field3D):
             delta[iax] = idx[iax] % 1
 
         for iax in range(3):
-            f000    = self.values[ii[0][0], ii[1][0], ii[2][0], iax]
-            f100    = self.values[ii[0][1], ii[1][0], ii[2][0], iax]
-            f110    = self.values[ii[0][1], ii[1][1], ii[2][0], iax]
-            f101    = self.values[ii[0][1], ii[1][0], ii[2][1], iax]
-            f111    = self.values[ii[0][1], ii[1][1], ii[2][1], iax]
-            f010    = self.values[ii[0][0], ii[1][1], ii[2][0], iax]
-            f011    = self.values[ii[0][0], ii[1][1], ii[2][1], iax]
-            f001    = self.values[ii[0][0], ii[1][0], ii[2][1], iax]
+            f000    = self.cy_values[ii[0][0], ii[1][0], ii[2][0], iax]
+            f100    = self.cy_values[ii[0][1], ii[1][0], ii[2][0], iax]
+            f110    = self.cy_values[ii[0][1], ii[1][1], ii[2][0], iax]
+            f101    = self.cy_values[ii[0][1], ii[1][0], ii[2][1], iax]
+            f111    = self.cy_values[ii[0][1], ii[1][1], ii[2][1], iax]
+            f010    = self.cy_values[ii[0][0], ii[1][1], ii[2][0], iax]
+            f011    = self.cy_values[ii[0][0], ii[1][1], ii[2][1], iax]
+            f001    = self.cy_values[ii[0][0], ii[1][0], ii[2][1], iax]
             f00     = f000 + (f100 - f000) * delta[0]
             f10     = f010 + (f110 - f010) * delta[0]
             f01     = f001 + (f101 - f001) * delta[0]
@@ -532,7 +571,7 @@ cdef class VectorField3D(Field3D):
             ff[iax] = f
         return (np.asarray(ff))
 
-def load(path):
+cpdef Field3D load(str path):
     """
     Load field data from disk.
 

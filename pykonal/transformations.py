@@ -4,6 +4,20 @@ A module to facilitate coordinate-system transformations.
 
 import numpy as np
 
+from . import constants
+
+
+def geo2sph(nodes):
+    """
+    Map Geographical coordinates to spherical coordinates.
+    """
+    geo = np.array(nodes, dtype=constants.DTYPE_REAL)
+    sph = np.empty_like(geo)
+    sph[..., 0] = constants.EARTH_RADIUS - geo[..., 2]
+    sph[..., 1] = np.pi / 2 - np.radians(geo[..., 0])
+    sph[..., 2] = np.radians(geo[..., 1])
+    return (sph)
+
 
 def sph2sph(nodes, origin):
     """
@@ -59,6 +73,18 @@ def xyz2sph(nodes, origin):
     pp  = np.arctan2(xyz[...,1], xyz[...,0])
     rtp = np.moveaxis(np.stack([rr, tt, pp]), 0, -1)
     return (rtp)
+
+
+def sph2geo(nodes):
+    """
+    Map spherical coordinates to geographic coordinates.
+    """
+    sph = np.array(nodes, dtype=constants.DTYPE_REAL)
+    geo = np.empty_like(sph)
+    geo[..., 0] = np.degrees(np.pi / 2 - sph[..., 1])
+    geo[..., 1] = np.degrees(sph[..., 2])
+    geo[..., 2] = constants.EARTH_RADIUS - sph[..., 0]
+    return (geo)
 
 
 def sph2xyz(nodes, origin):

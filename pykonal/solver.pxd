@@ -7,15 +7,16 @@ from . cimport fields
 from . cimport heapq
 
 cdef class EikonalSolver(object):
-    cdef str                       _coord_sys
-    cdef fields.ScalarField3D      _velocity
-    cdef fields.ScalarField3D      _traveltime
-    cdef heapq.Heap                _trial
-    cdef constants.BOOL_t[:,:,:]   _known
-    cdef constants.BOOL_t[:,:,:]   _unknown
-    cdef constants.REAL_t[:,:,:,:] _norm
-    cdef constants.UINT_t[3]       _is_periodic
-    cpdef bool_t solve(EikonalSolver self)
+    cdef str                       cy_coord_sys
+    cdef fields.ScalarField3D      cy_velocity
+    cdef fields.ScalarField3D      cy_traveltime
+    cdef heapq.Heap                cy_trial
+    cdef constants.BOOL_t[:,:,:]   cy_known
+    cdef constants.BOOL_t[:,:,:]   cy_unknown
+    cdef constants.REAL_t[:,:,:,:] cy_norm
+    cdef constants.UINT_t[3]       cy_is_periodic
+
+    cpdef constants.BOOL_t solve(EikonalSolver self)
     cpdef np.ndarray[constants.REAL_t, ndim=2] trace_ray(
             EikonalSolver self,
             constants.REAL_t[:] end

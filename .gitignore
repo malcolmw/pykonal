@@ -1,2 +1,4 @@
 *.DS_Store
 jupyter/.ipynb_checkpoints
+scripts/eq_loc/test_data
+*.log
