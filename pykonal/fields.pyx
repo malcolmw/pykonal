@@ -26,6 +26,10 @@ import numpy as np
 from . import constants
 from . import transformations
 
+# Cython built-in imports.
+from libc.math cimport sqrt, sin
+from libcpp.vector cimport vector as cpp_vector
+from libc.stdlib   cimport malloc, free
 
 # Third-party Cython imports
 cimport numpy as np
@@ -77,41 +81,6 @@ cdef class Field3D(object):
         return (arr)
 
     @property
-    def node_intervals(self):
-        """
-        [*Read/Write*, :class:`numpy.ndarray`\ (shape=(3,), dtype=numpy.float)]
-        Array of node intervals along each axis. This attribute must be
-        initialized by the user.
-        """
-        return (np.asarray(self.cy_node_intervals))
-
-    @node_intervals.setter
-    def node_intervals(self, value):
-        value = np.asarray(value, dtype=constants.DTYPE_REAL)
-        if np.any(value) <= 0:
-            raise (ValueError("All node intervals must be > 0"))
-        self.cy_node_intervals = value
-        self._update_max_coords()
-        self._update_iax_isperiodic()
-
-
-    @property
-    def npts(self):
-        """
-        [*Read/Write*, :class:`numpy.ndarray`\ (shape=(3,), dtype=numpy.int)]
-        Array specifying the number of nodes along each axis. This
-        attribute must be initialized by the user.
-        """
-        return (np.asarray(self.cy_npts))
-
-    @npts.setter
-    def npts(self, value):
-        self.cy_npts = np.asarray(value, dtype=constants.DTYPE_UINT)
-        self._update_max_coords()
-        self._update_iax_isnull()
-        self._update_iax_isperiodic()
-
-    @property
     def min_coords(self):
         """
         [*Read/Write*, :class:`numpy.ndarray`\ (shape=(3,), dtype=numpy.float)]
@@ -128,7 +97,6 @@ cdef class Field3D(object):
         self._update_max_coords()
         self._update_iax_isperiodic()
 
-
     @property
     def max_coords(self):
         """
@@ -137,6 +105,23 @@ cdef class Field3D(object):
         """
         return (np.asarray(self.cy_max_coords))
 
+    @property
+    def node_intervals(self):
+        """
+        [*Read/Write*, :class:`numpy.ndarray`\ (shape=(3,), dtype=numpy.float)]
+        Array of node intervals along each axis. This attribute must be
+        initialized by the user.
+        """
+        return (np.asarray(self.cy_node_intervals))
+
+    @node_intervals.setter
+    def node_intervals(self, value):
+        value = np.asarray(value, dtype=constants.DTYPE_REAL)
+        if np.any(value) <= 0:
+            raise (ValueError("All node intervals must be > 0"))
+        self.cy_node_intervals = value
+        self._update_max_coords()
+        self._update_iax_isperiodic()
 
     @property
     def nodes(self):
@@ -157,6 +142,52 @@ cdef class Field3D(object):
         nodes = np.stack(nodes)
         nodes = np.moveaxis(nodes, 0, -1)
         return (nodes)
+
+    @property
+    def norm(self):
+        """
+        [*Read-only*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2,3), dtype=numpy.float)] 4D array of scaling
+        factors for gradient operator.
+
+        .. added:: 0.2.3a0
+        """
+
+        try:
+            return (np.asarray(self.cy_norm))
+        except AttributeError:
+            norm = np.tile(
+                self.node_intervals,
+                np.append(self.npts, 1)
+            )
+            if self.coord_sys == "spherical":
+                norm[..., 1] *= self.nodes[..., 0]
+                norm[..., 2] *= self.nodes[..., 0]
+                norm[..., 2] *= np.sin(self.nodes[..., 1])
+            self.cy_norm = norm
+        return (np.asarray(self.cy_norm))
+
+    @property
+    def npts(self):
+        """
+        [*Read/Write*, :class:`numpy.ndarray`\ (shape=(3,), dtype=numpy.int)]
+        Array specifying the number of nodes along each axis. This
+        attribute must be initialized by the user.
+        """
+        return (np.asarray(self.cy_npts))
+
+    @npts.setter
+    def npts(self, value):
+        self.cy_npts = np.asarray(value, dtype=constants.DTYPE_UINT)
+        self._update_max_coords()
+        self._update_iax_isnull()
+        self._update_iax_isperiodic()
+
+    @property
+    def step_size(self):
+        """
+        [*Read only*, :class:`float`] Step size used for ray tracing.
+        """
+        return (self.norm[~np.isclose(self.norm, 0)].min() / 4)
 
 
     cdef constants.BOOL_t _update_iax_isperiodic(Field3D self):
@@ -301,7 +332,82 @@ cdef class ScalarField3D(Field3D):
         return (resampled)
 
 
-    cpdef constants.REAL_t value(ScalarField3D self, constants.REAL_t[:] point, constants.REAL_t null=np.nan):
+    cpdef np.ndarray[constants.REAL_t, ndim=2] trace_ray(
+            ScalarField3D self,
+            constants.REAL_t[:] end
+    ):
+        """
+        trace_ray(self, end)
+
+        Trace the ray ending at *end*.
+
+        This method traces the ray that ends at *end* in reverse
+        direction by taking small steps along the path of steepest
+        descent. The resulting ray is reversed before being returned,
+        so it is in the normal forward-time orientation.
+
+        :param end: Coordinates of the ray's end point.
+        :type end: numpy.ndarray(shape=(3,), dtype=numpy.float)
+
+        :return: The ray path ending at *end*.
+        :rtype:  numpy.ndarray(shape=(N,3), dtype=numpy.float)
+        """
+
+        cdef cpp_vector[constants.REAL_t *]       ray
+        cdef constants.REAL_t                     norm, step_size, value, value_1back
+        cdef constants.REAL_t                     *point_new
+        cdef constants.REAL_t[3]                  gg, point, point_1back
+        cdef Py_ssize_t                           idx, jdx
+        cdef np.ndarray[constants.REAL_t, ndim=2] ray_np
+        cdef str                                  coord_sys
+        cdef VectorField3D                        grad
+
+        coord_sys = self.coord_sys
+        step_size = self.step_size
+        grad      = self.gradient
+
+        point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
+        point_new[0], point_new[1], point_new[2] = end
+        ray.push_back(point_new)
+        point = ray.back()
+        value = self.value(point)
+
+        while True:
+            gg   = grad.value(point)
+            norm = sqrt(gg[0]**2 + gg[1]**2 + gg[2]**2)
+            for idx in range(3):
+                gg[idx] /= norm
+            if coord_sys == "spherical":
+                gg[1] /= point[0]
+                gg[2] /= point[0] * sin(point[1])
+            point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
+            for idx in range(3):
+                point_new[idx] = point[idx] - step_size * gg[idx]
+            point_1back = ray.back()
+            ray.push_back(point_new)
+            point  = ray.back()
+            try:
+                value_1back = value
+                value = self.value(point)
+                if value_1back <= value or np.isnan(value):
+                    break
+            except ValueError:
+                for idx in range(ray.size()-1):
+                    free(ray[idx])
+                return (None)
+        ray_np = np.zeros((ray.size()-1, 3), dtype=constants.DTYPE_REAL)
+        for idx in range(ray.size()-1):
+            for jdx in range(3):
+                ray_np[idx, jdx] = ray[idx][jdx]
+            free(ray[idx])
+        return (np.flipud(ray_np))
+
+
+    cpdef constants.REAL_t value(
+        ScalarField3D self,
+        constants.REAL_t[:] point,
+        constants.REAL_t null=np.nan
+    ):
         """
         value(self, point, null=numpy.nan)
 
