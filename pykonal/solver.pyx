@@ -14,6 +14,8 @@ instantiated as below:
    solver = pykonal.EikonalSolver(coord_sys="cartesian")
 """
 
+import warnings
+
 # Python thrid-party imports.
 import numpy as np
 
@@ -116,9 +118,16 @@ cdef class EikonalSolver(object):
     @property
     def norm(self):
         """
+        *DEPRECATED*
         [*Read-only*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2,3), dtype=numpy.float)] 4D array of scaling
         factors for gradient operator.
         """
+
+        warning_message = "This attribute is deprecated and will go away in a "\
+            "future version of PyKonal. Use pykonal.solver.EikonalSolver"\
+            ".traveltime.norm instead."
+        warnings.warn(warning_message, DeprecationWarning)
+
         try:
             return (np.asarray(self.cy_norm))
         except AttributeError:
@@ -136,8 +145,15 @@ cdef class EikonalSolver(object):
     @property
     def step_size(self):
         """
+        *DEPRECATED*
         [*Read only*, :class:`float`] Step size used for ray tracing.
         """
+
+        warning_message = "This attribute is deprecated and will go away in a "\
+            "future version of PyKonal. Use pykonal.solver.EikonalSolver"\
+            ".traveltime.step_size instead."
+        warnings.warn(warning_message, DeprecationWarning)
+
         return (self.norm[~np.isclose(self.norm, 0)].min() / 4)
 
 
@@ -410,6 +426,11 @@ cdef class EikonalSolver(object):
         cdef fields.VectorField3D                 grad
         cdef fields.ScalarField3D                 traveltime
         cdef str                                  coord_sys
+
+        warning_message = "This method is deprecated and will disappear in a "\
+            "future version of PyKonal. Use pykonal.EikonalSolver.traveltime."\
+            "trace_ray() instead."
+        warnings.warn(warning_message, DeprecationWarning)
 
 
         coord_sys = self.coord_sys
