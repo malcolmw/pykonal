@@ -19,7 +19,7 @@ def geo2sph(nodes):
     return (sph)
 
 
-def sph2sph(nodes, origin):
+def sph2sph(nodes, origin=[0, 0, 0]):
     """
     Transform spherical coordinates to new spherical coordinate system.
 
@@ -52,7 +52,7 @@ def sph2sph(nodes, origin):
     return (rtp)
 
 
-def xyz2sph(nodes, origin):
+def xyz2sph(nodes, origin=[0, 0, 0]):
     """
     Transform Cartesian coordinates to new spherical coordinate system.
 
@@ -87,7 +87,7 @@ def sph2geo(nodes):
     return (geo)
 
 
-def sph2xyz(nodes, origin):
+def sph2xyz(nodes, origin=[0, 0, 0]):
     """
     Transform spherical coordinates to new Cartesian coordinate system.
 
@@ -115,7 +115,7 @@ def sph2xyz(nodes, origin):
     return (xyz)
 
 
-def xyz2xyz(nodes, origin):
+def xyz2xyz(nodes, origin=[0, 0, 0]):
     """
     Transform Cartesian coordinates to new Cartesian coordinate system.
 
