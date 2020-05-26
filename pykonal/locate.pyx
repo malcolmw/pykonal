@@ -10,6 +10,7 @@ import scipy.optimize
 import tempfile
 
 from . import constants as _constants
+from . import inventory as _inventory
 from . import solver as _solver
 from . import transformations as _transformations
 
@@ -28,28 +29,19 @@ cdef class EQLocator(object):
     
     A class to locate earthquakes.
     """
-    def __init__(self, stations: dict, coord_sys: str="spherical", tt_dir: str=None):
+    def __init__(
+        self,
+        stations: dict,
+        traveltime_inventory: str,
+        coord_sys: str="spherical"
+    ):
         self.cy_arrivals = {}
         self.cy_traveltimes = {}
         self.cy_coord_sys = coord_sys
         self.cy_stations = stations
-        if tt_dir is None:
-            self.cy_tempdir_obj = tempfile.TemporaryDirectory()
-            self.cy_tt_dir = self.cy_tempdir_obj.name
-        else:
-            self.cy_tempdir_obj = None
-            self.cy_tt_dir = tt_dir
-            os.makedirs(self.cy_tt_dir, exist_ok=True)
+        inventory = _inventory.TraveltimeInventory(traveltime_inventory, mode="r")
+        self.cy_traveltime_inventory = inventory
 
-    def __enter__(self):
-        return (self)
-    
-    def __del__(self):
-        self.__exit__(None, None, None)
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.cleanup()
-        
 
     cpdef constants.BOOL_t add_arrivals(EQLocator self, dict arrivals):
         self.cy_arrivals = {**self.cy_arrivals, **arrivals}
@@ -60,13 +52,6 @@ cdef class EQLocator(object):
         self.cy_residual_rvs = {**self.cy_residual_rvs, **residual_rvs}
         return (True)
 
-
-    cpdef constants.BOOL_t cleanup(EQLocator self):
-        # If the traveltime directory is temporary, clean it up.
-        if self.cy_tempdir_obj is not None:
-            self.cy_tempdir_obj.cleanup()
-        return (True)
-    
 
     cpdef constants.BOOL_t clear_arrivals(EQLocator self):
         self.cy_arrivals = {}
@@ -103,14 +88,10 @@ cdef class EQLocator(object):
     @stations.setter
     def stations(self, value: dict):
         self.cy_stations = value
-    
+
     @property
-    def tt_dir(self) -> object:
-        return (self.cy_tt_dir)
-    
-    @property
-    def tt_dir_is_temp(self) -> bool:
-        return (self.cy_tt_dir_is_temp)
+    def traveltime_inventory(self) -> object:
+        return (self.cy_traveltime_inventory)
 
     @property
     def pwave_velocity(self) -> object:
@@ -173,154 +154,91 @@ cdef class EQLocator(object):
     @vs.setter
     def vs(self, value: np.ndarray):
         self.swave_velocity = value
-        
 
-    cpdef constants.BOOL_t compute_traveltime_lookup_table(EQLocator self, str station_id, str phase):
-        cdef fields.ScalarField3D velocity
-        if phase.upper() == "P":
-            velocity = self.cy_pwave_velocity
-        elif phase.upper() == "S":
-            velocity = self.cy_swave_velocity
-        else:
-            raise (ValueError(f"Unrecognized phase {phase}"))
-        solver = _solver.PointSourceSolver(coord_sys=self.coord_sys)
-        solver.velocity.min_coords = velocity.cy_min_coords
-        solver.velocity.node_intervals = velocity.cy_node_intervals
-        solver.velocity.npts = velocity.cy_npts
-        solver.velocity.values = velocity.cy_values
-        solver.src_loc = self.cy_stations[station_id]
-        solver.solve()
-        fname = os.path.join(self.cy_tt_dir, f"{station_id}.{phase}.npz")
-        solver.traveltime.savez(fname)
-            
-    cpdef constants.BOOL_t compute_all_traveltime_lookup_tables(EQLocator self, str phase):
-        cdef str station_id
 
-        for station_id in self.stations:
-            self.compute_traveltime_lookup_table(station_id, phase)
-        return (True)
-            
-    cpdef constants.BOOL_t load_traveltimes(EQLocator self):
+    cpdef constants.BOOL_t read_traveltimes(
+        EQLocator self, 
+        constants.REAL_t[:] min_coords=None, 
+        constants.REAL_t[:] max_coords=None
+    ):
+
+        inventory = self.cy_traveltime_inventory
         self.cy_traveltimes = {
-            **{key: self.cy_traveltimes[key] for key in self.cy_arrivals if key in self.cy_traveltimes},
-            **{key: fields.load(os.path.join(self.cy_tt_dir, f"{'.'.join(key)}.npz")) for key in self.cy_arrivals if key not in self.cy_traveltimes}
+            index: inventory.read(
+                "/".join(index),
+                min_coords=min_coords,
+                max_coords=max_coords
+            ) for index in self.cy_arrivals
         }
+
         return (True)
-    
-    cpdef np.ndarray[constants.REAL_t, ndim=1] grid_search(EQLocator self):
-        values = [self.cy_arrivals[key]-np.ma.masked_invalid(self.cy_traveltimes[key].values) for key in self.cy_traveltimes]
-        values = np.stack(values)
-        std = values.std(axis=0)
-        arg_min = np.argmin(std)
-        idx_min = np.unravel_index(arg_min, std.shape)
-        coords = self.cy_grid.nodes[idx_min]
-        time = values.mean(axis=0)[idx_min]
-        return (np.array([*coords, time], dtype=_constants.DTYPE_REAL))
-    
+
+
+    #cpdef np.ndarray[constants.REAL_t, ndim=1] grid_search(EQLocator self):
+    #    values = [self.cy_arrivals[key]-np.ma.masked_invalid(self.cy_traveltimes[key].values) for key in self.cy_traveltimes]
+    #    values = np.stack(values)
+    #    std = values.std(axis=0)
+    #    arg_min = np.argmin(std)
+    #    idx_min = np.unravel_index(arg_min, std.shape)
+    #    coords = self.cy_grid.nodes[idx_min]
+    #    time = values.mean(axis=0)[idx_min]
+    #    return (np.array([*coords, time], dtype=_constants.DTYPE_REAL))
+
+    #
     cpdef constants.REAL_t rms(EQLocator self, constants.REAL_t[:] hypocenter):
         cdef tuple                   key
-        cdef Py_ssize_t              idx
+        cdef dict                    arrivals
+        cdef dict                    traveltimes
         cdef constants.REAL_t        csum = 0
         cdef constants.REAL_t        num
-        cdef constants.REAL_t        rho, theta, phi, time
-        cdef constants.REAL_t[:]     arrivals
-        cdef list                    traveltimes
+        cdef constants.REAL_t        t0
 
-        arrivals = self.cy_arrivals_sorted
-        traveltimes = self.cy_traveltimes_sorted
+        arrivals = self.cy_arrivals
+        traveltimes = self.cy_traveltimes
+        t0 = hypocenter[3]
 
-        rho = hypocenter[0]
-        theta = hypocenter[1]
-        phi = hypocenter[2]
-        time = hypocenter[3]
-        if not (
-            rho > self.cy_grid.cy_min_coords[0]
-            and rho < self.cy_grid.cy_max_coords[0]
-            and theta > self.cy_grid.cy_min_coords[1]
-            and theta < self.cy_grid.cy_max_coords[1]
-            and phi > self.cy_grid.cy_min_coords[2]
-            and phi < self.cy_grid.cy_max_coords[2]
-        ):
-            return (inf)
-        for idx in range(len(arrivals)):
-            num = arrivals[idx] - time
-            num -= traveltimes[idx].value(hypocenter[:3])
+        for key in arrivals:
+            num = arrivals[key] - t0
+            num -= traveltimes[key].value(hypocenter[:3], null=np.inf)
             csum += num * num
+
         return (sqrt(csum/len(arrivals)))
 
     
     cpdef np.ndarray[constants.REAL_t, ndim=1] locate(
         EQLocator self,
-        constants.REAL_t dlat=0.1,
-        constants.REAL_t dlon=0.1,
-        constants.REAL_t dz=10,
-        constants.REAL_t dt=10
+        np.ndarray[constants.REAL_t, ndim=1] initial,
+        np.ndarray[constants.REAL_t, ndim=1] delta
     ):
         """
         Locate event using a grid search and Differential Evolution
         Optimization to minimize the residual RMS.
         """
-        cdef constants.REAL_t[:] h0
-        cdef constants.REAL_t    dtheta
-        cdef constants.REAL_t    dphi
-        cdef constants.REAL_t    theta_min
-        cdef constants.REAL_t    theta_max
-        cdef constants.REAL_t    phi_min
-        cdef constants.REAL_t    phi_max
-        cdef constants.REAL_t    rho_min
-        cdef constants.REAL_t    rho_max
-        cdef constants.REAL_t    t_min
-        cdef constants.REAL_t    t_max
+       
+        min_coords = initial - delta
+        max_coords = initial + delta
+        bounds = np.stack([min_coords, max_coords]).T
 
-        # Pre-sort arrival times and traveltime calculators for fast
-        # lookup. This is likely ineffective at improving efficiency.
-        self.cy_arrivals_sorted = np.array([
-            self.cy_arrivals[key] for key in sorted(self.cy_arrivals)
-        ])
-        self.cy_traveltimes_sorted = [
-            self.cy_traveltimes[key] for key in sorted(self.cy_arrivals)
-        ]
-        
-        # Get an initial location estimate via grid search.
-        h0 = self.grid_search()
+        self.read_traveltimes(
+            min_coords=min_coords[:3],
+            max_coords=max_coords[:3]
+        )
 
-        # Compute optimization bounds.
-        dtheta = np.radians(dlat)
-        dphi = np.radians(dlon)
-        delta = np.array([dz, dtheta, dphi])
-        rho_min, theta_min, phi_min = np.max(
-            np.stack([h0[:3] - delta[:3], self.grid.min_coords]),
-            axis=0
-        )
-        rho_max, theta_max, phi_max = np.min(
-            np.stack([h0[:3] + delta[:3], self.grid.max_coords]),
-            axis=0
-        )
-        t_min = h0[3] - dt
-        t_max = h0[3] + dt
+        soln = scipy.optimize.differential_evolution(self.rms, bounds)
 
-        soln = scipy.optimize.differential_evolution(
-            self.rms,
-            (
-                (rho_min, rho_max),
-                (theta_min, theta_max),
-                (phi_min, phi_max),
-                (t_min, t_max)
-            )
-        )
         return (soln.x)
 
-    cpdef constants.REAL_t log_likelihood(
-        EQLocator self,
-        constants.REAL_t[:] model
-    ):
-        cdef constants.REAL_t   t_pred, residual
-        cdef constants.REAL_t   log_likelihood = 0.0
-        cdef tuple              key
-        cdef EQLocator[:]       junk
+    #cpdef constants.REAL_t log_likelihood(
+    #    EQLocator self,
+    #    constants.REAL_t[:] model
+    #):
+    #    cdef constants.REAL_t   t_pred, residual
+    #    cdef constants.REAL_t   log_likelihood = 0.0
+    #    cdef tuple              key
+    #    cdef EQLocator[:]       junk
 
-        for key in self.cy_arrivals:
-            t_pred = model[3] + self.cy_traveltimes[key].value(model[:3])
-            residual = self.cy_arrivals[key] - t_pred
-            log_likelihood = log_likelihood + self.cy_residual_rvs[key].logpdf(residual)
-        return (log_likelihood)
+    #    for key in self.cy_arrivals:
+    #        t_pred = model[3] + self.cy_traveltimes[key].value(model[:3])
+    #        residual = self.cy_arrivals[key] - t_pred
+    #        log_likelihood = log_likelihood + self.cy_residual_rvs[key].logpdf(residual)
+    #    return (log_likelihood)
