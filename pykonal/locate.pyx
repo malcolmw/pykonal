@@ -43,6 +43,18 @@ cdef class EQLocator(object):
         self.cy_traveltime_inventory = inventory
 
 
+    def __del__(self):
+        self.traveltime_inventory.f5.close()
+
+
+    def __enter__(self):
+        return (self)
+
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.__del__()
+
+
     cpdef constants.BOOL_t add_arrivals(EQLocator self, dict arrivals):
         self.cy_arrivals = {**self.cy_arrivals, **arrivals}
         return (True)

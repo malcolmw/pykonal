@@ -56,8 +56,6 @@ class TraveltimeInventory(object):
 
         for path in paths:
 
-            print (f"Merging {path}")
-
             _, filename = os.path.split(path)
             filename, file_ext = os.path.splitext(filename)
             network, station, phase = filename.split(".")
