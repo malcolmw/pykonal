@@ -16,4 +16,4 @@ sh$> pip install .
 
 ## References
 1. Sethian, J. A. (1996). A fast marching level set method for monotonically advancing fronts. *Proceedings of the National Academy of Sciences, 93*(4), 1591–1595. https://doi.org/10.1073/pnas.93.4.1591
-2. White, M. C. A., Fang, H., Nakata, N., & Ben-Zion, Y. (2019). PyKonal: A Python package for solving the Eikonal equation in spherical and Cartesian coordinates using the Fast Marching Method. *Seismological Research Letters*, In press.
+2. White, M. C. A., Fang, H., Nakata, N., & Ben-Zion, Y. (2020). PyKonal: A Python Package for Solving the Eikonal Equation in Spherical and Cartesian Coordinates Using the Fast Marching Method. *Seismological Research Letters*, in press. https://doi.org/10.1785/0220190318
