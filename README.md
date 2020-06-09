@@ -8,9 +8,11 @@ PyKonal offers two features that are absent from the comparable [scikit-fmm](htt
 Documentation is available [here](https://malcolmw.github.io/pykonal-docs/ "PyKonal documentation").
     
 ## Citation
-If you make use of this code in published work, please cite White et al. (2020).
+If you make use of this code in published work, please cite White *et al.* (2020).
 
 ## Installation
+Download the [latest release](https://github.com/malcolmw/pykonal/releases "Releases").
+
 ### Conda—recommended
 ```bash
 sh$> conda create --name pykonal -c conda-forge python=3.7 numpy 'cython>=0.29.14'
