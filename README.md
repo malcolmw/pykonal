@@ -2,7 +2,7 @@
 
 This code implements the Fast Marching Method (FMM; Sethian *et al.*, 1996) for solving the eikonal equation in Cartesian or spherical coordinates in 2 or 3 dimensions. The method implements a mixed first- and second-order finite differences.
 
-PyKonal offers two features that are absent from the comparable [scikit-fmm](https://pythonhosted.org/scikit-fmm/ "sckit-fmm documentation") package: (a) an implementation in spherical coordinates, and (b) functionality to compute propagation paths.
+PyKonal offers two features that are absent from the comparable [scikit-fmm](https://pythonhosted.org/scikit-fmm/ "sckit-fmm documentation") package: (a) an implementation in spherical coordinates, and (b) functionality to compute shortest-traveltime paths.
 
 ## Documentation
 Documentation is available [here](https://malcolmw.github.io/pykonal-docs/ "PyKonal documentation").
