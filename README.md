@@ -18,13 +18,13 @@ Download the [latest release](https://github.com/malcolmw/pykonal/releases "Rele
 sh$> conda create --name pykonal -c conda-forge python=3.7 numpy 'cython>=0.29.14'
 sh$> conda activate pykonal
 (pykonal)sh$> cd path/to/pykonal
-(pykonal)sh$> python setup.py install
+(pykonal)sh$> pip install .
 ```
 ### PIP
 ```bash
 sh$> pip install numpy cython>=0.29.14
 sh$> cd path/to/pykonal
-sh$> python setup.py install
+sh$> pip install .
 ```
 ## Bugs
 Please report bugs, feature requests, and questions through the [Issues](https://github.com/malcolmw/pykonal/issues "PyKonal Issues tracker") tracker.
