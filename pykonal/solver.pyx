@@ -4,7 +4,7 @@
 """
 The core module of PyKonal for solving the Eikonal equation.
 
-This module provides a single class (:class:`pykonal.solver.EikonalSolver`),
+This module provides the core class (:class:`pykonal.solver.EikonalSolver`),
 which gets imported into the root-level namespace and can thus be
 instantiated as below:
 
@@ -12,6 +12,9 @@ instantiated as below:
 
    import pykonal
    solver = pykonal.EikonalSolver(coord_sys="cartesian")
+
+An additional convenience class (:class:`pykonal.solver.PointSourceSolver`)
+is made available in this module.
 """
 
 import warnings
@@ -83,7 +86,7 @@ cdef class EikonalSolver(object):
     @property
     def coord_sys(self):
         """
-        [*Read only*, :class:`str`] Coordinate system of solver
+        [*Read only*, str] Coordinate system of solver
         {"Cartesian", "spherical"}.
         """
         return (self.cy_coord_sys)
@@ -92,7 +95,7 @@ cdef class EikonalSolver(object):
     @property
     def known(self):
         """
-        [*Read/Write*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2), dtype=numpy.bool)] 3D array of booleans
+        [*Read/Write*, numpy.ndarray(shape=(N0,N1,N2), dtype=numpy.bool)] 3D array of booleans
         indicating whether nodes are in *Known*.
         """
         try:
@@ -104,7 +107,7 @@ cdef class EikonalSolver(object):
     @property
     def unknown(self):
         """
-        [*Read/Write*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2), dtype=numpy.bool)] 3D array of booleans
+        [*Read/Write*, numpy.ndarray(shape=(N0,N1,N2), dtype=numpy.bool)] 3D array of booleans
         indicating whether nodes are in *Unknown*.
         """
         try:
@@ -118,8 +121,10 @@ cdef class EikonalSolver(object):
     @property
     def norm(self):
         """
-        *DEPRECATED*
-        [*Read-only*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2,3), dtype=numpy.float)] 4D array of scaling
+        .. deprecated:: 0.3.2
+           Use self.velocity.norm or self.traveltime.velocity instead.
+
+        [*Read-only*, numpy.ndarray(shape=(N0,N1,N2,3), dtype=numpy.float)] 4D array of scaling
         factors for gradient operator.
         """
 
@@ -145,8 +150,10 @@ cdef class EikonalSolver(object):
     @property
     def step_size(self):
         """
-        *DEPRECATED*
-        [*Read only*, :class:`float`] Step size used for ray tracing.
+        .. deprecated:: 0.3.2
+           Use self.velocity.step_size of self.traveltime.step_size instead.
+
+        [*Read only*, float] Step size used for ray tracing.
         """
 
         warning_message = "This attribute is deprecated and will go away in a "\
@@ -231,7 +238,7 @@ cdef class EikonalSolver(object):
 
         tt = self.traveltime.values
         vv = self.velocity.values
-        norm = self.norm
+        norm = self.velocity.norm
         known = self.known
         unknown = self.unknown
         trial = self.trial
@@ -403,76 +410,11 @@ cdef class EikonalSolver(object):
         """
         trace_ray(self, end)
 
-        Trace the ray ending at *end*.
-
-        This method traces the ray that ends at *end* in reverse
-        direction by taking small steps along the path of steepest
-        traveltime descent. The resulting ray is reversed before being
-        returned, so it is in the normal forward-time orientation.
-
-        :param end: Coordinates of the ray's end point.
-        :type end: numpy.ndarray(shape=(3,), dtype=numpy.float)
-
-        :return: The ray path ending at *end*.
-        :rtype:  numpy.ndarray(shape=(N,3), dtype=numpy.float)
+        An alias to self.traveltime.trace_ray().
         """
-
-        cdef cpp_vector[constants.REAL_t *]       ray
-        cdef constants.REAL_t                     norm, step_size, value, value_1back
-        cdef constants.REAL_t                     *point_new
-        cdef constants.REAL_t[3]                  gg, point, point_1back
-        cdef Py_ssize_t                           idx, jdx
-        cdef np.ndarray[constants.REAL_t, ndim=2] ray_np
-        cdef fields.VectorField3D                 grad
-        cdef fields.ScalarField3D                 traveltime
-        cdef str                                  coord_sys
-
-        warning_message = "This method is deprecated and will disappear in a "\
-            "future version of PyKonal. Use pykonal.EikonalSolver.traveltime."\
-            "trace_ray() instead."
-        warnings.warn(warning_message, DeprecationWarning)
+        return (self.traveltime.trace_ray(end))
 
 
-        coord_sys = self.coord_sys
-        step_size = self.step_size
-        grad = self.traveltime.gradient
-        traveltime = self.traveltime
-
-        point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
-        point_new[0], point_new[1], point_new[2] = end
-        ray.push_back(point_new)
-        point = ray.back()
-        value = traveltime.value(point)
-
-        while True:
-            gg   = grad.value(point)
-            norm = sqrt(gg[0]**2 + gg[1]**2 + gg[2]**2)
-            for idx in range(3):
-                gg[idx] /= norm
-            if coord_sys == "spherical":
-                gg[1] /= point[0]
-                gg[2] /= point[0] * sin(point[1])
-            point_new = <constants.REAL_t *> malloc(3 * sizeof(constants.REAL_t))
-            for idx in range(3):
-                point_new[idx] = point[idx] - step_size * gg[idx]
-            point_1back = ray.back()
-            ray.push_back(point_new)
-            point  = ray.back()
-            try:
-                value_1back = value
-                value = traveltime.value(point)
-                if value_1back <= value or np.isnan(value):
-                    break
-            except ValueError:
-                for idx in range(ray.size()-1):
-                    free(ray[idx])
-                return (None)
-        ray_np = np.zeros((ray.size()-1, 3), dtype=constants.DTYPE_REAL)
-        for idx in range(ray.size()-1):
-            for jdx in range(3):
-                ray_np[idx, jdx] = ray[idx][jdx]
-            free(ray[idx])
-        return (np.flipud(ray_np))
 
 
 class PointSourceSolver(EikonalSolver):

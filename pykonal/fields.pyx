@@ -12,11 +12,12 @@ for storing and interpolating data, and, in the case of scalar fields,
 computing the gradient.
 
 This module also provides an I/O function
-(:func:`load <pykonal.fields.load>`) to load data that was saved using
-the :func:`savez <pykonal.fields.Field3D.savez>` method of the above
+(:func:`read_hdf <pykonal.fields.read_hdf>`) to read data that was saved using
+the :func:`to_hdf <pykonal.fields.Field3D.to_hdf>` method of the above
 classes.
 
 .. autofunction:: pykonal.fields.load(path)
+.. autofunction:: pykonal.fields.read_hdf(path)
 """
 
 import warnings
@@ -153,10 +154,8 @@ cdef class Field3D(object):
     @property
     def norm(self):
         """
-        [*Read-only*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2,3), dtype=numpy.float)] 4D array of scaling
+        [*Read-only*, numpy.ndarray(shape=(N0,N1,N2,3), dtype=numpy.float)] 4D array of scaling
         factors for gradient operator.
-
-        .. added:: 0.2.3a0
         """
 
         try:
@@ -320,7 +319,7 @@ cdef class ScalarField3D(Field3D):
     @property
     def gradient(self):
         """
-        [*Read only*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2,3), dtype=numpy.float)]
+        [*Read only*, numpy.ndarray(shape=(N0,N1,N2,3), dtype=numpy.float)]
         Gradient of the field.
         """
         if self.coord_sys == "cartesian":
@@ -332,7 +331,7 @@ cdef class ScalarField3D(Field3D):
     @property
     def values(self):
         """
-        [*Read/Write*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2), dtype=numpy.float)]
+        [*Read/Write*, numpy.ndarray(shape=(N0,N1,N2), dtype=numpy.float)]
         Value of the field at each grid node.
         """
         try:
@@ -382,7 +381,8 @@ cdef class ScalarField3D(Field3D):
         """
         trace_ray(self, end)
 
-        Trace the ray ending at *end*.
+        Trace the ray ending at *end* (given in the
+        same coordinate system as self.coord_sys.)
 
         This method traces the ray that ends at *end* in reverse
         direction by taking small steps along the path of steepest
@@ -641,7 +641,7 @@ cdef class VectorField3D(Field3D):
     @property
     def values(self):
         """
-        [*Read/Write*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2,3), dtype=numpy.float)]
+        [*Read/Write*, numpy.ndarray(shape=(N0,N1,N2,3), dtype=numpy.float)]
         Value of the field at each grid node.
         """
         try:
@@ -724,6 +724,9 @@ cdef class VectorField3D(Field3D):
 
 cpdef Field3D load(str path):
     """
+    .. deprecated:: 0.3.2
+       Use :func:`read_hdf` instead.
+
     Load field data from disk.
 
     :param path: Path to input file.
@@ -751,6 +754,22 @@ cpdef Field3D load(str path):
 
 
 def read_hdf(path, min_coords=None, max_coords=None):
+    """
+    Load field data from HDF5 file on disk.
+
+    :param path: Path to input file.
+    :type path: str
+    :param min_coords: Minimum bounding coordinates to read. This is for
+                       reading a limited portion of the file and should
+                       be given in the same coordinates as self.coord_sys.
+    :type min_coords: numpy.ndarray(shape=(3,), dtype=numpy.float), optional
+    :param max_coords: Maximum bounding coordinates to read. This is for
+                       reading a limited portion of the file and should
+                       be given in the same coordinates as self.coord_sys.
+    :type max_coords: numpy.ndarray(shape=(3,), dtype=numpy.float), optional
+    :return: A Field3D-derivative class initialized with data in *path*.
+    :rtype: ScalarField3D or VectorField3D
+    """
     
     with h5py.File(path, mode="r") as f5:
 
