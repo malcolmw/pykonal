@@ -5,6 +5,7 @@ from . cimport constants
 
 cdef class Field3D(object):
     cdef str                       cy_coord_sys
+    cdef str                       cy_field_type
     cdef constants.BOOL_t[3]       cy_iax_isnull
     cdef constants.BOOL_t[3]       cy_iax_isperiodic
     cdef constants.REAL_t[3]       cy_max_coords
@@ -16,6 +17,13 @@ cdef class Field3D(object):
     cdef constants.BOOL_t _update_max_coords(Field3D self)
     cdef constants.BOOL_t _update_iax_isnull(Field3D self)
     cdef constants.BOOL_t _update_iax_isperiodic(Field3D self)
+
+    cpdef constants.BOOL_t to_hdf(
+        Field3D self,
+        str path,
+        str key=*,
+        constants.BOOL_t overwrite=*
+    )
 
 
 cdef class ScalarField3D(Field3D):

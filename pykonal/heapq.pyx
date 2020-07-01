@@ -39,7 +39,7 @@ cdef class Heap(object):
     @property
     def heap_index(self):
         """
-        [:class:`numpy.ndarray`\ (shape=(N0,N1,N2), dtype=numpy.int)]
+        [*Read only*, numpy.ndarray(shape=(N0,N1,N2), dtype=numpy.int)]
         Array of indices indicating the heap position of each node. 
         Index -1 indicates that a node is not on the heap.
         """
@@ -48,7 +48,7 @@ cdef class Heap(object):
     @property
     def keys(self):
         """
-        [:class:`list`\ [(int, int, int),...]] Sorted list of node
+        [*Read only*, list] Sorted list of node
         indices currently on the heap.
         """
         cdef Index3D idx
@@ -62,7 +62,7 @@ cdef class Heap(object):
     @property
     def size(self):
         """
-        [:class:`int`] Number of node indices on the heap.
+        [*Read only*, int] Number of node indices on the heap.
         """
         return (self.cy_keys.size())
 
@@ -70,7 +70,7 @@ cdef class Heap(object):
     @property
     def values(self):
         """
-        [:class:`numpy.ndarray`\ (shape=(N0,N1,N2), dtype=numpy.float)]
+        [*Read/Write*, numpy.ndarray(shape=(N0,N1,N2), dtype=numpy.float)]
         Auxiliary values to sort by.
         """
         return (np.asarray(self.cy_values))

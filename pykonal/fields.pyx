@@ -12,14 +12,18 @@ for storing and interpolating data, and, in the case of scalar fields,
 computing the gradient.
 
 This module also provides an I/O function
-(:func:`load <pykonal.fields.load>`) to load data that was saved using
-the :func:`savez <pykonal.fields.Field3D.savez>` method of the above
+(:func:`read_hdf <pykonal.fields.read_hdf>`) to read data that was saved using
+the :func:`to_hdf <pykonal.fields.Field3D.to_hdf>` method of the above
 classes.
 
 .. autofunction:: pykonal.fields.load(path)
+.. autofunction:: pykonal.fields.read_hdf(path)
 """
 
+import warnings
+
 # Third-party imports
+import h5py
 import numpy as np
 
 # Local imports
@@ -52,6 +56,10 @@ cdef class Field3D(object):
         field data is represented {"Cartesian", "spherical"}.
         """
         return (self.cy_coord_sys)
+
+    @property
+    def field_type(self):
+        return (self.cy_field_type)
 
     @property
     def iax_isnull(self):
@@ -146,10 +154,8 @@ cdef class Field3D(object):
     @property
     def norm(self):
         """
-        [*Read-only*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2,3), dtype=numpy.float)] 4D array of scaling
+        [*Read-only*, numpy.ndarray(shape=(N0,N1,N2,3), dtype=numpy.float)] 4D array of scaling
         factors for gradient operator.
-
-        .. added:: 0.2.3a0
         """
 
         try:
@@ -229,6 +235,12 @@ cdef class Field3D(object):
         :return: Returns True upon successful execution.
         :rtype: bool
         """
+
+        warning_message = "The savez() method is deprecated and will be removed"\
+            " from future versions of PyKonal. Use pykonal.fields.Field3D.to_hdf()"\
+            " instead."
+        warnings.warn(warning_message, DeprecationWarning)
+
         np.savez_compressed(
             path,
             min_coords=self.min_coords,
@@ -238,6 +250,35 @@ cdef class Field3D(object):
             coord_sys=[self.coord_sys]
         )
         return (True)
+
+
+    cpdef constants.BOOL_t to_hdf(Field3D self, str path, str key=None, constants.BOOL_t overwrite=False):
+
+        with h5py.File(path, mode="a") as f5:
+
+            if key is not None:
+
+                if key in f5 and overwrite is True:
+                    del (f5[key])
+
+                group = f5.create_group(key)
+
+            else:
+
+                group = f5["/"]
+
+            group.attrs["coord_sys"] = self.coord_sys
+            group.attrs["field_type"] = self.field_type
+
+            for attr in ("min_coords", "node_intervals", "npts", "values"):
+
+                if attr in group and overwrite is True:
+                    del (group[attr])
+
+                group.create_dataset(attr, data=getattr(self, attr))
+
+        return (True)
+
 
     def transform_coordinates(self, coord_sys, origin):
         """
@@ -273,11 +314,12 @@ cdef class ScalarField3D(Field3D):
     """
     def __init__(self, coord_sys="cartesian"):
         super(ScalarField3D, self).__init__(coord_sys=coord_sys)
+        self.cy_field_type = "scalar"
 
     @property
     def gradient(self):
         """
-        [*Read only*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2,3), dtype=numpy.float)]
+        [*Read only*, numpy.ndarray(shape=(N0,N1,N2,3), dtype=numpy.float)]
         Gradient of the field.
         """
         if self.coord_sys == "cartesian":
@@ -289,7 +331,7 @@ cdef class ScalarField3D(Field3D):
     @property
     def values(self):
         """
-        [*Read/Write*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2), dtype=numpy.float)]
+        [*Read/Write*, numpy.ndarray(shape=(N0,N1,N2), dtype=numpy.float)]
         Value of the field at each grid node.
         """
         try:
@@ -339,7 +381,8 @@ cdef class ScalarField3D(Field3D):
         """
         trace_ray(self, end)
 
-        Trace the ray ending at *end*.
+        Trace the ray ending at *end* (given in the
+        same coordinate system as self.coord_sys.)
 
         This method traces the ray that ends at *end* in reverse
         direction by taking small steps along the path of steepest
@@ -592,12 +635,13 @@ cdef class VectorField3D(Field3D):
 
     def __init__(self, coord_sys="cartesian"):
         super(VectorField3D, self).__init__(coord_sys=coord_sys)
+        self.cy_field_type = "vector"
 
 
     @property
     def values(self):
         """
-        [*Read/Write*, :class:`numpy.ndarray`\ (shape=(N0,N1,N2,3), dtype=numpy.float)]
+        [*Read/Write*, numpy.ndarray(shape=(N0,N1,N2,3), dtype=numpy.float)]
         Value of the field at each grid node.
         """
         try:
@@ -677,8 +721,12 @@ cdef class VectorField3D(Field3D):
             ff[iax] = f
         return (np.asarray(ff))
 
+
 cpdef Field3D load(str path):
     """
+    .. deprecated:: 0.3.2
+       Use :func:`read_hdf` instead.
+
     Load field data from disk.
 
     :param path: Path to input file.
@@ -686,6 +734,12 @@ cpdef Field3D load(str path):
     :return: A Field3D-derivative class initialized with data in *path*.
     :rtype: ScalarField3D or VectorField3D
     """
+
+    warning_message = "The load() function is deprecated and will be removed"\
+        " from future versions of PyKonal. Use pykonal.fields.read_hdf()"\
+        " instead."
+    warnings.warn(warning_message, DeprecationWarning)
+
     with np.load(path) as npz:
         coord_sys = str(npz["coord_sys"][0])
         if len(npz["values"].shape) == 4:
@@ -696,4 +750,81 @@ cpdef Field3D load(str path):
         field.node_intervals = npz["node_intervals"]
         field.npts = npz["npts"]
         field.values = npz["values"]
+    return (field)
+
+
+def read_hdf(path, min_coords=None, max_coords=None):
+    """
+    Load field data from HDF5 file on disk.
+
+    :param path: Path to input file.
+    :type path: str
+    :param min_coords: Minimum bounding coordinates to read. This is for
+                       reading a limited portion of the file and should
+                       be given in the same coordinates as self.coord_sys.
+    :type min_coords: numpy.ndarray(shape=(3,), dtype=numpy.float), optional
+    :param max_coords: Maximum bounding coordinates to read. This is for
+                       reading a limited portion of the file and should
+                       be given in the same coordinates as self.coord_sys.
+    :type max_coords: numpy.ndarray(shape=(3,), dtype=numpy.float), optional
+    :return: A Field3D-derivative class initialized with data in *path*.
+    :rtype: ScalarField3D or VectorField3D
+    """
+    
+    with h5py.File(path, mode="r") as f5:
+
+        _coord_sys = f5.attrs["coord_sys"]
+        _field_type = f5.attrs["field_type"]
+        _min_coords = f5["min_coords"][:]
+        _node_intervals = f5["node_intervals"][:]
+        _npts = f5["npts"][:]
+        
+        if min_coords is not None:
+            
+            min_coords = np.array(min_coords)
+            
+        if max_coords is not None:
+            
+            max_coords = np.array(max_coords)
+        
+        if min_coords is not None and max_coords is not None:
+            
+            if np.any(min_coords >= max_coords):
+                
+                raise(ValueError("All values of min_coords must satisfy min_coords < max_coords."))
+        
+        if min_coords is not None:
+            
+            idx_start = (min_coords - _min_coords) / _node_intervals
+            idx_start = np.floor(idx_start)
+            idx_start = idx_start.astype(np.int32)
+            idx_start = np.clip(idx_start, 0, _npts - 1)
+            
+        else:
+            
+            idx_start = np.array([0, 0, 0])
+            
+        if max_coords is not None:
+            
+            idx_end = (max_coords - _min_coords) / _node_intervals
+            idx_end = np.ceil(idx_end) + 1
+            idx_end = idx_end.astype(np.int32)
+            idx_end = np.clip(idx_end, idx_start + 1, _npts)
+            
+        else:
+            
+            idx_end = _npts
+
+        if _field_type == "scalar":
+            field = ScalarField3D(coord_sys=_coord_sys)
+        elif _field_type == "vector":
+            field = VectorField3D(coord_sys=_coord_sys)
+        else:
+            raise (ValueError(f"Unrecognized field type: {_field_type}"))
+        field.min_coords = _min_coords  +  idx_start * _node_intervals
+        field.node_intervals = _node_intervals
+        field.npts = idx_end - idx_start
+        idxs = tuple(slice(idx_start[idx], idx_end[idx]) for idx in range(3))
+        field.values = f5["values"][idxs]
+
     return (field)

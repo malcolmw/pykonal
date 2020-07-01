@@ -1,5 +1,12 @@
 """
 A module to facilitate coordinate-system transformations.
+
+.. autofunction:: geo2sph(nodes)
+.. autofunction:: sph2sph(nodes, origin=(0,0,0))
+.. autofunction:: xyz2sph(nodes, origin=(0,0,0))
+.. autofunction:: sph2geo(nodes, origin=(0,0,0))
+.. autofunction:: sph2xyz(nodes, origin=(0,0,0))
+.. autofunction:: xyz2xyz(nodes, origin=(0,0,0))
 """
 
 import numpy as np
@@ -9,7 +16,7 @@ from . import constants
 
 def geo2sph(nodes):
     """
-    Map Geographical coordinates to spherical coordinates.
+    Transform geographical coordinates to new spherical coordinates system.
     """
     geo = np.array(nodes, dtype=constants.DTYPE_REAL)
     sph = np.empty_like(geo)
@@ -19,7 +26,7 @@ def geo2sph(nodes):
     return (sph)
 
 
-def sph2sph(nodes, origin):
+def sph2sph(nodes, origin=(0,0,0)):
     """
     Transform spherical coordinates to new spherical coordinate system.
 
@@ -52,7 +59,7 @@ def sph2sph(nodes, origin):
     return (rtp)
 
 
-def xyz2sph(nodes, origin):
+def xyz2sph(nodes, origin=(0,0,0)):
     """
     Transform Cartesian coordinates to new spherical coordinate system.
 
@@ -77,7 +84,7 @@ def xyz2sph(nodes, origin):
 
 def sph2geo(nodes):
     """
-    Map spherical coordinates to geographic coordinates.
+    Transform spherical coordinates to new geographical coordinate system.
     """
     sph = np.array(nodes, dtype=constants.DTYPE_REAL)
     geo = np.empty_like(sph)
@@ -87,7 +94,7 @@ def sph2geo(nodes):
     return (geo)
 
 
-def sph2xyz(nodes, origin):
+def sph2xyz(nodes, origin=(0,0,0)):
     """
     Transform spherical coordinates to new Cartesian coordinate system.
 
@@ -115,7 +122,7 @@ def sph2xyz(nodes, origin):
     return (xyz)
 
 
-def xyz2xyz(nodes, origin):
+def xyz2xyz(nodes, origin=(0,0,0)):
     """
     Transform Cartesian coordinates to new Cartesian coordinate system.
 
@@ -133,7 +140,7 @@ def xyz2xyz(nodes, origin):
 
 def rotation_matrix(alpha, beta, gamma):
     """
-    Rotation matrix used to rotate a set of cartesian coordinates.
+    Rotation matrix used to rotate a Set of cartesian coordinates.
 
     The rotation matrix is defined such that coordinates are rotated by
     alpha radians about the z-axis, then beta radians about the y'-axis
