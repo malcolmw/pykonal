@@ -1,3 +1,7 @@
+![](https://img.shields.io/github/issues/malcolmw/pykonal)
+![](https://img.shields.io/github/forks/malcolmw/pykonal)
+![](https://img.shields.io/github/stars/malcolmw/pykonal)
+![](https://img.shields.io/github/license/malcolmw/pykonal)
 # Welcome to the *pykonal* repository!
 
 This code implements the Fast Marching Method (FMM; Sethian *et al.*, 1996) for solving the eikonal equation in Cartesian or spherical coordinates in 2 or 3 dimensions. The method implements mixed first- and second-order finite differences.
