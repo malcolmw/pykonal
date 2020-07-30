@@ -19,14 +19,14 @@ Download the [latest release](https://github.com/malcolmw/pykonal/releases "Rele
 
 ### Conda—recommended
 ```bash
-sh$> conda create --name pykonal -c conda-forge python=3.7 numpy 'cython>=0.29.14'
+sh$> conda create --name pykonal -c conda-forge python=3.8 'cython>=0.29.14' h5py numpy scipy
 sh$> conda activate pykonal
 (pykonal)sh$> cd path/to/pykonal
 (pykonal)sh$> pip install .
 ```
 ### PIP
 ```bash
-sh$> pip install numpy cython>=0.29.14
+sh$> pip install cython>=0.29.14 h5py numpy scipy
 sh$> cd path/to/pykonal
 sh$> pip install .
 ```
