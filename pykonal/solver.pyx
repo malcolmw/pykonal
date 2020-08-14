@@ -634,7 +634,10 @@ class PointSourceSolver(EikonalSolver):
         origin = (r0, t0, p0)
         # Transform the coordinates of the near-field grid nodes to the
         # far-field coordinate system.
-        nodes = self.near_field.vv.transform_coordinates(self.coord_sys, origin)
+        nodes = self.near_field.vv.transform_coordinates(
+            self.coord_sys,
+            origin
+        )
         # Find the indices of the near-field grid nodes that are inside
         # the far-field grid.
         bool_idx = True

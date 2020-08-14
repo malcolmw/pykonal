@@ -296,7 +296,14 @@ cdef class Field3D(object):
         :rtype: numpy.ndarray(shape=(N0,N1,N2,3), dtype=numpy.float)
         """
         if self.coord_sys == "spherical" and coord_sys.lower() == "spherical":
-            return (transformations.sph2sph(self.nodes, origin))
+            force_phi_positive = self.min_coords[2] >= 0
+            return (
+                transformations.sph2sph(
+                    self.nodes,
+                    origin,
+                    force_phi_positive=force_phi_positive
+                )
+            )
         elif self.coord_sys == "cartesian" and coord_sys.lower() == "spherical":
             return (transformations.xyz2sph(self.nodes, origin))
         elif self.coord_sys == "spherical" and coord_sys.lower() == "cartesian":

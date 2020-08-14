@@ -26,7 +26,7 @@ def geo2sph(nodes):
     return (sph)
 
 
-def sph2sph(nodes, origin=(0,0,0)):
+def sph2sph(nodes, origin=(0,0,0), force_phi_positive=False):
     """
     Transform spherical coordinates to new spherical coordinate system.
 
@@ -55,11 +55,13 @@ def sph2sph(nodes, origin=(0,0,0)):
     tt  = np.arccos(xyz[...,2] / rr)
     np.seterr(**old)
     pp  = np.arctan2(xyz[...,1], xyz[...,0])
+    if force_phi_positive:
+        pp = np.mod(pp, 2*np.pi)
     rtp = np.moveaxis(np.stack([rr, tt, pp]), 0, -1)
     return (rtp)
 
 
-def xyz2sph(nodes, origin=(0,0,0)):
+def xyz2sph(nodes, origin=(0,0,0), force_phi_positive=False):
     """
     Transform Cartesian coordinates to new spherical coordinate system.
 
@@ -78,6 +80,8 @@ def xyz2sph(nodes, origin=(0,0,0)):
     tt  = np.arccos(xyz[...,2] / rr)
     np.seterr(**old)
     pp  = np.arctan2(xyz[...,1], xyz[...,0])
+    if force_phi_positive:
+        pp = np.mod(pp, 2*np.pi)
     rtp = np.moveaxis(np.stack([rr, tt, pp]), 0, -1)
     return (rtp)
 
