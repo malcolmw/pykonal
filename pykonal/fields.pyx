@@ -94,13 +94,18 @@ cdef class Field3D(object):
         [*Read/Write*, :class:`numpy.ndarray`\ (shape=(3,), dtype=numpy.float)]
         Array specifying the lower bound of each axis. This attribute
         must be initialized by the user.
+
+        :math:`\phi` coordinate must be in [-:math:`\pi`, :math:`\pi`) or
+        [0, 2:math:`\pi`] for spherical coordinates.
         """
         return (np.asarray(self.cy_min_coords))
 
     @min_coords.setter
     def min_coords(self, value):
         if self.coord_sys == "spherical" and value[0] == 0:
-            raise (ValueError("min_coords[0] must be > 0 for spherical coordinates."))
+            raise (ValueError("ρ must be > 0 for spherical coordinates."))
+        if self.coord_sys == "spherical" and value[2] < -np.pi:
+            raise (ValueError("φ must be in [-π,π) or [0,2π) for spherical coordinates."))
         self.cy_min_coords = np.asarray(value, dtype=constants.DTYPE_REAL)
         self._update_max_coords()
         self._update_iax_isperiodic()
@@ -220,6 +225,13 @@ cdef class Field3D(object):
         for iax in range(3):
             dx = self.cy_node_intervals[iax] * <constants.REAL_t>(self.cy_npts[iax] - 1)
             self.cy_max_coords[iax] = self.cy_min_coords[iax] + dx
+
+        if self.cy_coord_sys == "spherical":
+            if self.cy_min_coords[2] >= 0 and self.cy_max_coords[2] > 2*np.pi:
+                raise(ValueError("Phi coordinates must be in [-π, π) or [0, 2π)."))
+            elif self.cy_min_coords[2] < 0 and self.cy_max_coords[2] > np.pi:
+                raise(ValueError("Phi coordinates must be in [-π, π) or [0, 2π)."))
+
         return (True)
 
 
@@ -280,7 +292,7 @@ cdef class Field3D(object):
         return (True)
 
 
-    def transform_coordinates(self, coord_sys, origin):
+    def transform_coordinates(self, coord_sys, origin, force_phi_positive=False):
         """
         transform_coordinates(self, coord_sys, origin)
 
@@ -292,11 +304,13 @@ cdef class Field3D(object):
         :param origin: Coordinates of the origin of the new frame with
                        respect to the old frame of reference.
         :type origin: tuple(float, float, float)
+        :param force_phi_positive: Force :math:`\phi` to be in [0, 2:math:`pi`)
+                                   for output spherical coordinates.
+        :type force_phi_positive: bool
         :return: Node coordinates in new frame of reference.
         :rtype: numpy.ndarray(shape=(N0,N1,N2,3), dtype=numpy.float)
         """
         if self.coord_sys == "spherical" and coord_sys.lower() == "spherical":
-            force_phi_positive = self.min_coords[2] >= 0
             return (
                 transformations.sph2sph(
                     self.nodes,

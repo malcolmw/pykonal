@@ -55,8 +55,10 @@ def sph2sph(nodes, origin=(0,0,0), force_phi_positive=False):
     tt  = np.arccos(xyz[...,2] / rr)
     np.seterr(**old)
     pp  = np.arctan2(xyz[...,1], xyz[...,0])
-    if force_phi_positive:
-        pp = np.mod(pp, 2*np.pi)
+    pp = np.mod(pp, 2*np.pi)
+    print(force_phi_positive)
+    if force_phi_positive is False:
+        np.mod(pp, -np.pi, pp, where=pp>np.pi)
     rtp = np.moveaxis(np.stack([rr, tt, pp]), 0, -1)
     return (rtp)
 
