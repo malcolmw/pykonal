@@ -26,7 +26,7 @@ inf = np.inf
 cdef class EQLocator(object):
     """
     EQLocator(stations, tt_dir=None)
-    
+
     A class to locate earthquakes.
     """
     def __init__(
@@ -73,12 +73,12 @@ cdef class EQLocator(object):
     cpdef constants.BOOL_t clear_residual_rvs(EQLocator self):
         self.cy_residual_rvs = {}
         return (True)
-        
-    
+
+
     @property
     def arrivals(self) -> dict:
         return (self.cy_arrivals)
-    
+
     @arrivals.setter
     def arrivals(self, value: dict):
         self.cy_arrivals = value
@@ -92,11 +92,11 @@ cdef class EQLocator(object):
         if self.cy_grid is None:
             self.cy_grid = fields.ScalarField3D(coord_sys=self.cy_coord_sys)
         return (self.cy_grid)
-    
+
     @property
     def stations(self) -> dict:
         return (self.cy_stations)
-    
+
     @stations.setter
     def stations(self, value: dict):
         self.cy_stations = value
@@ -113,17 +113,17 @@ cdef class EQLocator(object):
             self.cy_pwave_velocity.node_intervals = self.cy_grid.node_intervals
             self.cy_pwave_velocity.npts = self.cy_grid.npts
         return (self.cy_pwave_velocity)
-    
+
     @pwave_velocity.setter
     def pwave_velocity(self, value: np.ndarray):
         if self.cy_pwave_velocity is None:
             self.pwave_velocity
         self.cy_pwave_velocity.values = value
-    
+
     @property
     def vp(self) -> object:
         return (self.pwave_velocity)
-    
+
     @vp.setter
     def vp(self, value: np.ndarray):
         self.pwave_velocity = value
@@ -131,11 +131,11 @@ cdef class EQLocator(object):
     @property
     def residual_rvs(self) -> dict:
         return (self.cy_residual_rvs)
-    
+
     @residual_rvs.setter
     def residual_rvs(self, value: dict):
         self.cy_residual_rvs = value
-    
+
     @property
     def swave_velocity(self) -> object:
         if self.cy_swave_velocity is None:
@@ -144,21 +144,21 @@ cdef class EQLocator(object):
             self.cy_swave_velocity.node_intervals = self.cy_grid.node_intervals
             self.cy_swave_velocity.npts = self.cy_grid.npts
         return (self.cy_swave_velocity)
-    
+
     @swave_velocity.setter
     def swave_velocity(self, value: np.ndarray):
         if self.cy_swave_velocity is None:
             self.swave_velocity
         self.cy_swave_velocity.values = value
-        
+
     @property
     def traveltimes(self) -> dict:
         return (self.cy_traveltimes)
-    
+
     @traveltimes.setter
     def traveltimes(self, value: dict):
         self.cy_traveltimes = value
-        
+
     @property
     def vs(self) -> object:
         return (self.swave_velocity)
@@ -169,8 +169,8 @@ cdef class EQLocator(object):
 
 
     cpdef constants.BOOL_t read_traveltimes(
-        EQLocator self, 
-        constants.REAL_t[:] min_coords=None, 
+        EQLocator self,
+        constants.REAL_t[:] min_coords=None,
         constants.REAL_t[:] max_coords=None
     ):
 
@@ -216,7 +216,7 @@ cdef class EQLocator(object):
 
         return (sqrt(csum/len(arrivals)))
 
-    
+
     cpdef np.ndarray[constants.REAL_t, ndim=1] locate(
         EQLocator self,
         np.ndarray[constants.REAL_t, ndim=1] initial,
@@ -226,7 +226,7 @@ cdef class EQLocator(object):
         Locate event using a grid search and Differential Evolution
         Optimization to minimize the residual RMS.
         """
-       
+
         min_coords = initial - delta
         max_coords = initial + delta
         bounds = np.stack([min_coords, max_coords]).T
