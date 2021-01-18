@@ -10,6 +10,7 @@ import logging
 import mpi4py.MPI as MPI
 import numpy as np
 import pandas as pd
+import pathlib
 import pykonal
 import signal
 
@@ -30,6 +31,25 @@ DTYPES = {
     "event_id":  np.int64
 }
 
+ARRIVAL_FIELDS_INPUT = [
+    "network",
+    "station",
+    "phase",
+    "time",
+    "event_id",
+    "weight"
+]
+ARRIVAL_FIELDS_OUTPUT = [*ARRIVAL_FIELDS_INPUT, "residual"]
+EVENT_FIELDS_INPUT = ["latitude", "longitude", "depth", "time", "event_id"]
+EVENT_FIELDS_OUTPUT = [*EVENT_FIELDS_INPUT, "residual"]
+STATION_FIELDS_INPUT = [
+    "network",
+    "station",
+    "latitude",
+    "longitude",
+    "elevation"
+]
+
 geo2sph = pykonal.transformations.geo2sph
 sph2geo = pykonal.transformations.sph2geo
 
@@ -40,9 +60,9 @@ def parse_args():
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "arrivals_file",
+        "catalog",
         type=str,
-        help="Input file containing phase arrival data."
+        help="Input catalog."
     )
     parser.add_argument(
         "network_geometry",
@@ -86,44 +106,29 @@ def parse_cfg(configuration_file):
     cfg = dict()
     parser = configparser.ConfigParser()
     parser.read(configuration_file)
-    cfg["traveltime_directory"] = parser.get(
+    cfg["traveltime_inventory"] = parser.get(
         "DEFAULT",
-        "traveltime_directory",
+        "traveltime_inventory",
         fallback=None
     )
-    cfg["overwrite_traveltimes"] = parser.getboolean(
-        "DEFAULT",
-        "overwrite_traveltimes",
-        fallback=False
-    )
-    cfg["pwave_velocity_model"] = parser.get(
-        "DEFAULT",
-        "pwave_velocity_model",
-        fallback=None
-    )
-    cfg["swave_velocity_model"] = parser.get(
-        "DEFAULT",
-        "swave_velocity_model",
-        fallback=None
-    )
-    cfg["dlat_search"] = parser.getfloat(
+    cfg["dlat"] = parser.getfloat(
         "Differential Evolution",
-        "dlat_search",
+        "dlat",
         fallback=0.1
     )
-    cfg["dlon_search"] = parser.getfloat(
+    cfg["dlon"] = parser.getfloat(
         "Differential Evolution",
-        "dlon_search",
+        "dlon",
         fallback=0.1
     )
-    cfg["dz_search"] = parser.getfloat(
+    cfg["dz"] = parser.getfloat(
         "Differential Evolution",
-        "dz_search",
+        "dz",
         fallback=10
     )
-    cfg["dt_search"] = parser.getfloat(
+    cfg["dt"] = parser.getfloat(
         "Differential Evolution",
-        "dt_search",
+        "dt",
         fallback=10
     )
     for key in cfg:
@@ -229,66 +234,69 @@ def event_location_loop(argc, cfg):
     A worker loop to locate events.
     """
 
-    # Define columns to output.
-    columns = ["latitude", "longitude", "depth", "time", "residual", "event_id"]
-
     # Load network geometry from disk.
     stations = load_stations(argc.network_geometry)
 
-    # Load velocity models.
-    pwave_velocity = pykonal.fields.load(cfg["pwave_velocity_model"])
-    swave_velocity = pykonal.fields.load(cfg["swave_velocity_model"])
-
-    # Initialize EQLocator object.
-    locator = pykonal.locate.EQLocator(
+    with pykonal.locate.EQLocator(
         station_dict(stations),
-        tt_dir=cfg["traveltime_directory"]
-    )
-    locator.grid.min_coords     = pwave_velocity.min_coords
-    locator.grid.node_intervals = pwave_velocity.node_intervals
-    locator.grid.npts           = pwave_velocity.npts
-    locator.pwave_velocity      = pwave_velocity.values
-    locator.swave_velocity      = swave_velocity.values
+        cfg["traveltime_inventory"]
+    ) as locator:
 
-    # Load arrival data from disk.
-    arrivals = load_arrivals(argc.arrivals_file)
+        # Load the input catalog.
+        catalog = load_catalog(argc.catalog)
+        arrivals = catalog["arrivals"]
+        events = catalog["events"]
+        events = events.set_index("event_id")
 
-    # Initialize an empty dataframe to hold event locations.
-    events = pd.DataFrame()
+        # Initialize an empty dataframe to hold event locations.
+        relocated_events = pd.DataFrame()
 
-    # Give aliases for a few configuration parameters.
-    dlat = cfg["dlat_search"]
-    dlon = cfg["dlon_search"]
-    dz   = cfg["dz_search"]
-    dt   = cfg["dt_search"]
+        # Give aliases for a few configuration parameters.
+        dlat = cfg["dlat"]
+        dlon = cfg["dlon"]
+        dz   = cfg["dz"]
+        dt   = cfg["dt"]
 
-    while True:
+        dtheta = np.radians(dlat)
+        dphi = np.radians(dlon)
 
-        # Request an event
-        COMM.send(RANK, dest=ROOT_RANK, tag=ID_REQUEST_TAG)
-        event_id = COMM.recv(source=ROOT_RANK, tag=ID_TRANSMISSION_TAG)
+        # Initialize the search region.
+        delta = np.array([dz, dtheta, dphi, dt])
 
-        if event_id is None:
-            logger.debug("Received sentinel.")
-            return (events)
+        while True:
 
-        logger.debug(f"Received ID #{event_id}.")
+            # Request an event
+            COMM.send(RANK, dest=ROOT_RANK, tag=ID_REQUEST_TAG)
+            event_id = COMM.recv(source=ROOT_RANK, tag=ID_TRANSMISSION_TAG)
 
-        # Clear arrivals from previous event.
-        locator.clear_arrivals()
-        locator.add_arrivals(arrival_dict(arrivals, event_id))
-        locator.load_traveltimes()
-        loc = locator.locate(dlat=dlat, dlon=dlon, dz=dz, dt=dt)
+            if event_id is None:
+                logger.debug("Received sentinel.")
+                return (relocated_events)
 
-        # Get residual RMS, reformat result, and append to events
-        # DataFrame.
-        rms = locator.rms(loc)
-        loc[:3] = sph2geo(loc[:3])
-        event = pd.DataFrame(
-            [np.concatenate((loc, [rms, event_id]))],
-            columns=columns
-        )
-        events = events.append(event, ignore_index=True)
+            logger.debug(f"Received ID #{event_id}.")
+
+            # Extract the initial event location and convert to
+            # spherical coordinates.
+            _columns = ["latitude", "longitude", "depth", "time"]
+            initial = events.loc[event_id, _columns].values
+            initial[:3] = geo2sph(initial[:3])
+
+            # Clear arrivals from previous event.
+            locator.clear_arrivals()
+            _arrival_dict = arrival_dict(arrivals, event_id)
+            locator.add_arrivals(_arrival_dict)
+
+            loc = locator.locate(initial, delta)
+
+            # Get residual RMS, reformat result, and append to events
+            # DataFrame.
+            rms = locator.rms(loc)
+            loc[:3] = sph2geo(loc[:3])
+            event = pd.DataFrame(
+                [np.concatenate((loc, [rms, event_id]))],
+                columns=EVENT_FIELDS_OUTPUT
+            )
+            relocated_events = relocated_events.append(event, ignore_index=True)
 
     return (False)
 
@@ -299,8 +307,10 @@ def id_distribution_loop(argc, cfg):
     A loop to distribute event IDs to hungry workers.
     """
 
-    arrivals = load_arrivals(argc.arrivals_file)
-    event_ids = arrivals["event_id"].unique()
+    catalog = load_catalog(argc.catalog)
+    events = catalog["events"]
+    del (catalog)
+    event_ids = events["event_id"].unique()[:50]
     # Distribute event IDs.
     for idx in range(len(event_ids)):
         event_id = event_ids[idx]
@@ -315,20 +325,29 @@ def id_distribution_loop(argc, cfg):
 
 
 @log_errors
-def load_arrivals(input_file):
+def load_catalog(input_file):
     """
     Load and return arrival data from input file.
 
     Returns: pandas.DataFrame object with "network", "station", "phase",
     "time", and "event_id" fields.
     """
+    input_file = pathlib.Path(input_file)
+    if input_file.suffix in (".h5", ".hdf5"):
+        return (_load_catalog_hdf5(input_file))
+    else:
+        raise (NotImplementedError())
 
-    with pd.HDFStore(input_file, mode="r") as store:
-        arrivals = store["arrivals"]
 
-    arrivals = arrivals[["network", "station", "phase", "time", "event_id"]]
+@log_errors
+def _load_catalog_hdf5(input_file):
+    arrivals = pd.read_hdf(input_file, key="arrivals")
+    events = pd.read_hdf(input_file, key="events")
+    arrivals = arrivals[ARRIVAL_FIELDS_INPUT]
+    events = events[EVENT_FIELDS_INPUT]
+    catalog = dict(arrivals=arrivals, events=events)
 
-    return (arrivals)
+    return (catalog)
 
 
 @log_errors
@@ -347,13 +366,29 @@ def load_stations(input_file):
     kilometers.
     """
 
+    input_file = pathlib.Path(input_file)
+    if input_file.suffix in (".h5", ".hdf5"):
+        return (_load_stations_hdf5(input_file))
+    elif input_file.suffix in (".txt", ".dat"):
+        return (_load_stations_txt(input_file))
+
+@log_errors
+def _load_stations_hdf5(input_file):
     with pd.HDFStore(input_file, mode="r") as store:
         stations = store["stations"]
 
+    stations = stations[STATION_FIELDS_INPUT]
     stations["depth"] = -stations["elevation"]
-    stations = stations[
-        ["network", "station", "latitude", "longitude", "depth"]
-    ]
+
+    return (stations)
+
+
+@log_errors
+def _load_stations_txt(input_file):
+    stations = pd.read_csv(input_file, delim_whitespace=True)
+
+    stations = stations[STATION_FIELDS_INPUT]
+    stations["depth"] = -stations["elevation"]
 
     return (stations)
 
@@ -374,7 +409,7 @@ def arrival_dict(dataframe, event_id):
     dataframe = dataframe.loc[event_id, fields]
 
     _arrival_dict = {
-        (f"{network}.{station}", phase): timestamp
+        (network, station, phase): timestamp
         for network, station, phase, timestamp in dataframe.values
     }
 
@@ -398,7 +433,7 @@ def station_dict(dataframe):
     dataframe = dataframe.set_index(["network", "station"])
 
     _station_dict = {
-        f"{network}.{station}": geo2sph(
+        (network, station): geo2sph(
             dataframe.loc[
                 (network, station),
                 ["latitude", "longitude", "depth"]
