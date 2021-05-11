@@ -24,10 +24,10 @@ cdef class EQLocator(object):
         constants.REAL_t[:] min_coords=*,
         constants.REAL_t[:] max_coords=*
     )
-    #cpdef constants.REAL_t log_likelihood(
-    #    EQLocator self,
-    #    constants.REAL_t[:] model
-    #)
+    cpdef constants.REAL_t log_likelihood(
+        EQLocator self,
+        constants.REAL_t[:] model
+    )
     #cpdef np.ndarray[constants.REAL_t, ndim=1] grid_search(EQLocator self)
     cpdef constants.REAL_t rms(EQLocator self, constants.REAL_t[:] hypocenter)
     cpdef np.ndarray[constants.REAL_t, ndim=1] locate(

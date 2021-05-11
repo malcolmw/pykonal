@@ -240,17 +240,16 @@ cdef class EQLocator(object):
 
         return (soln.x)
 
-    #cpdef constants.REAL_t log_likelihood(
-    #    EQLocator self,
-    #    constants.REAL_t[:] model
-    #):
-    #    cdef constants.REAL_t   t_pred, residual
-    #    cdef constants.REAL_t   log_likelihood = 0.0
-    #    cdef tuple              key
-    #    cdef EQLocator[:]       junk
+    cpdef constants.REAL_t log_likelihood(
+        EQLocator self,
+        constants.REAL_t[:] model
+    ):
+        cdef constants.REAL_t   t_pred, residual
+        cdef constants.REAL_t   log_likelihood = 0.0
+        cdef tuple              key
 
-    #    for key in self.cy_arrivals:
-    #        t_pred = model[3] + self.cy_traveltimes[key].value(model[:3])
-    #        residual = self.cy_arrivals[key] - t_pred
-    #        log_likelihood = log_likelihood + self.cy_residual_rvs[key].logpdf(residual)
-    #    return (log_likelihood)
+        for key in self.cy_arrivals:
+            t_pred = model[3] + self.cy_traveltimes[key].value(model[:3])
+            residual = self.cy_arrivals[key] - t_pred
+            log_likelihood = log_likelihood + self.cy_residual_rvs[key].logpdf(residual)
+        return (log_likelihood)
