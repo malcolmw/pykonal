@@ -1,0 +1,141 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+import argparse
+import multiprocessing as mp
+import numpy as np
+import pandas as pd
+import pathlib
+import pykonal
+import tempfile
+import tqdm
+
+
+def parse_argc():
+    """
+    Parse and return command line arguments.
+    """
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "network_geometry",
+        type=str,
+        help="Input file containing network geometry (station locations)."
+    )
+    parser.add_argument(
+        "vp_model",
+        type=str,
+        help="Input P-wave velocity model."
+    )
+    parser.add_argument(
+        "vs_model",
+        type=str,
+        help="Input S-wave velocity model."
+    )
+    parser.add_argument(
+        "output_file",
+        type=str,
+        help="Path to output Traveltime Inventory file."
+    )
+    parser.add_argument(
+        "-n",
+        "--nproc",
+        type=int,
+        default=mp.cpu_count(),
+        help="Number of processors to use."
+    )
+
+    argc = parser.parse_args()
+
+    return (argc)
+
+
+def read_network_geometry(argc):
+    """
+    Read and return network geometry from argc.network_geometry.
+    """
+    KEYS = [
+        "network",
+        "station",
+        "location",
+        "latitude",
+        "longitude",
+        "elevation"
+    ]
+    stations = pd.read_hdf(argc.network_geometry, key="stations")
+    stations = stations[KEYS]
+    stations = stations.drop_duplicates(["network", "station", "location"])
+
+    return (stations)
+
+
+class Target(object):
+
+    def __init__(self, vp_model_path, vs_model_path, temp_dir):
+        self.vp_model_path = vp_model_path
+        self.vs_model_path = vs_model_path
+        self.temp_dir = pathlib.Path(temp_dir)
+
+
+    def __call__(self, args):
+        _, row = args
+        network, station, location, latitude, longitude, elevation = row
+        depth = -elevation
+        for path, phase in ((self.vp_model_path, "P"), (self.vs_model_path, "S")):
+            model = pykonal.fields.read_hdf(path)
+            solver = pykonal.solver.PointSourceSolver(coord_sys=model.coord_sys)
+            solver.vv.min_coords = model.min_coords
+            solver.vv.node_intervals = model.node_intervals
+            solver.vv.npts = model.npts
+            solver.vv.values = model.values
+            solver.src_loc = pykonal.transformations.geo2sph(np.array([latitude, longitude, depth]))
+            solver.solve()
+            output_path = self.temp_dir.joinpath(
+                ".".join(
+                    (
+                        network,
+                        station,
+                        location,
+                        phase,
+                        "hdf5"
+                    )
+                )
+            )
+            solver.tt.to_hdf(str(output_path))
+
+
+def main():
+    argc = parse_argc()
+    stations = read_network_geometry(argc)
+    with mp.Pool(argc.nproc) as pool, tempfile.TemporaryDirectory() as temp_dir:
+        print("Computing traveltimes...")
+        list(
+            tqdm.tqdm(
+                pool.imap(
+                    Target(
+                        argc.vp_model,
+                        argc.vs_model,
+                        temp_dir
+                    ),
+                    stations.iterrows()
+                ),
+                total=len(stations)
+            )
+        )
+
+        inventory = pykonal.inventory.TraveltimeInventory(
+            argc.output_file,
+            mode="w"
+        )
+        print("Merging traveltimes...")
+        paths = sorted(pathlib.Path(temp_dir).iterdir())
+        for path in tqdm.tqdm(paths): 
+            inventory.add(
+                pykonal.fields.read_hdf(path),
+                path.stem
+            )
+        inventory.f5.close()
+
+
+if __name__ == "__main__":
+    main()
