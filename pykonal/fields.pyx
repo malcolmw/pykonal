@@ -440,6 +440,8 @@ cdef class ScalarField3D(Field3D):
         while True:
             gg   = grad.value(point)
             norm = sqrt(gg[0]**2 + gg[1]**2 + gg[2]**2)
+            if np.isnan(norm):
+                raise (ValueError("Encountered NaN gradient."))
             for idx in range(3):
                 gg[idx] /= norm
             if coord_sys == "spherical":
