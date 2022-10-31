@@ -130,7 +130,7 @@ cdef class Field3D(object):
     @node_intervals.setter
     def node_intervals(self, value):
         value = np.asarray(value, dtype=constants.DTYPE_REAL)
-        if np.any(value) <= 0:
+        if np.any(value <= 0):
             raise (ValueError("All node intervals must be > 0"))
         self.cy_node_intervals = value
         self._update_max_coords()
