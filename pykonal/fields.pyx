@@ -198,7 +198,8 @@ cdef class Field3D(object):
         """
         [*Read only*, :class:`float`] Step size used for ray tracing.
         """
-        return (self.norm[~np.isclose(self.norm, 0)].min() / 4)
+        norm = self.norm[..., ~self.iax_isnull]
+        return (norm[~np.isclose(norm, 0)].min() / 4)
 
 
     cdef constants.BOOL_t _update_iax_isperiodic(Field3D self):
