@@ -417,7 +417,6 @@ cdef class ScalarField3D(Field3D):
         """
 
         cdef cpp_vector[constants.REAL_t]         ray
-        cdef Py_ssize_t n
         cdef constants.REAL_t                     norm, step_size, value, value_1back
         cdef constants.REAL_t[3]                  gg
         cdef constants.REAL_t[:]                  point
