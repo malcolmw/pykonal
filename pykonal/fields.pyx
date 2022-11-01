@@ -130,7 +130,7 @@ cdef class Field3D(object):
     @node_intervals.setter
     def node_intervals(self, value):
         value = np.asarray(value, dtype=constants.DTYPE_REAL)
-        if np.any(value) <= 0:
+        if np.any(value <= 0):
             raise (ValueError("All node intervals must be > 0"))
         self.cy_node_intervals = value
         self._update_max_coords()
@@ -198,7 +198,8 @@ cdef class Field3D(object):
         """
         [*Read only*, :class:`float`] Step size used for ray tracing.
         """
-        return (self.norm[~np.isclose(self.norm, 0)].min() / 4)
+        norm = self.norm[..., ~self.iax_isnull]
+        return (norm[~np.isclose(norm, 0)].min() / 4)
 
 
     cdef constants.BOOL_t _update_iax_isperiodic(Field3D self):
@@ -439,6 +440,8 @@ cdef class ScalarField3D(Field3D):
         while True:
             gg   = grad.value(point)
             norm = sqrt(gg[0]**2 + gg[1]**2 + gg[2]**2)
+            if np.isnan(norm):
+                raise (ValueError("Encountered NaN gradient."))
             for idx in range(3):
                 gg[idx] /= norm
             if coord_sys == "spherical":
