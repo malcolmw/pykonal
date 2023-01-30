@@ -2,3 +2,9 @@
 jupyter/.ipynb_checkpoints
 scripts/eq_loc/test_data
 *.log
+*.cpp
+*.c
+build
+dist
+pykonal.egg-info
+pykonal/__pycache__

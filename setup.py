@@ -4,7 +4,8 @@ setup.py adapted from https://github.com/kennethreitz/setup.py
 import io
 import numpy as np
 import os
-from distutils.core import setup
+#from distutils.core import setup
+from setuptools import setup
 from Cython.Build import cythonize
 
 
@@ -12,7 +13,7 @@ from Cython.Build import cythonize
 name            = "pykonal"
 description     = "Solve the Eikonal equation in 3D Cartesian or spherical coordinates."
 url             = "https://github.com/malcolmw/pykonal"
-email           = "malcolm.white@.usc.edu"
+email           = "malcolmw@mit.edu"
 author          = "Malcolm C. A. White"
 requires_python = ">=3"
 packages        = ["pykonal"]
