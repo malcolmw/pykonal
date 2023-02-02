@@ -25,21 +25,22 @@ inf = np.inf
 
 cdef class EQLocator(object):
     """
-    EQLocator(stations, tt_dir=None)
+    EQLocator(stations, tt_inv, coord_sys='spherical')
     
     A class to locate earthquakes.
     """
     def __init__(
         self,
-        stations: dict,
         traveltime_inventory: str,
         coord_sys: str="spherical"
     ):
         self.cy_arrivals = {}
         self.cy_traveltimes = {}
         self.cy_coord_sys = coord_sys
-        self.cy_stations = stations
-        inventory = _inventory.TraveltimeInventory(traveltime_inventory, mode="r")
+        inventory = _inventory.TraveltimeInventory(
+            traveltime_inventory, 
+            mode="r"
+        )
         self.cy_traveltime_inventory = inventory
 
 
@@ -92,14 +93,6 @@ cdef class EQLocator(object):
         if self.cy_grid is None:
             self.cy_grid = fields.ScalarField3D(coord_sys=self.cy_coord_sys)
         return (self.cy_grid)
-    
-    @property
-    def stations(self) -> dict:
-        return (self.cy_stations)
-    
-    @stations.setter
-    def stations(self, value: dict):
-        self.cy_stations = value
 
     @property
     def traveltime_inventory(self) -> object:
@@ -108,7 +101,9 @@ cdef class EQLocator(object):
     @property
     def pwave_velocity(self) -> object:
         if self.cy_pwave_velocity is None:
-            self.cy_pwave_velocity = fields.ScalarField3D(coord_sys=self.cy_coord_sys)
+            self.cy_pwave_velocity = fields.ScalarField3D(
+                coord_sys=self.cy_coord_sys
+            )
             self.cy_pwave_velocity.min_coords = self.cy_grid.min_coords
             self.cy_pwave_velocity.node_intervals = self.cy_grid.node_intervals
             self.cy_pwave_velocity.npts = self.cy_grid.npts
@@ -139,7 +134,9 @@ cdef class EQLocator(object):
     @property
     def swave_velocity(self) -> object:
         if self.cy_swave_velocity is None:
-            self.cy_swave_velocity = fields.ScalarField3D(coord_sys=self.cy_coord_sys)
+            self.cy_swave_velocity = fields.ScalarField3D(
+                coord_sys=self.cy_coord_sys
+            )
             self.cy_swave_velocity.min_coords = self.cy_grid.min_coords
             self.cy_swave_velocity.node_intervals = self.cy_grid.node_intervals
             self.cy_swave_velocity.npts = self.cy_grid.npts
@@ -183,7 +180,7 @@ cdef class EQLocator(object):
             ) for index in self.cy_arrivals
         }
 
-        return (True)
+        return True
 
 
     #cpdef np.ndarray[constants.REAL_t, ndim=1] grid_search(EQLocator self):
@@ -240,17 +237,17 @@ cdef class EQLocator(object):
 
         return (soln.x)
 
-    #cpdef constants.REAL_t log_likelihood(
-    #    EQLocator self,
-    #    constants.REAL_t[:] model
-    #):
-    #    cdef constants.REAL_t   t_pred, residual
-    #    cdef constants.REAL_t   log_likelihood = 0.0
-    #    cdef tuple              key
-    #    cdef EQLocator[:]       junk
+    cpdef constants.REAL_t log_likelihood(
+        EQLocator self,
+        constants.REAL_t[:] model
+    ):
+        cdef constants.REAL_t   t_pred, residual
+        cdef constants.REAL_t   log_likelihood = 0.0
+        cdef tuple              key
+        cdef EQLocator[:]       junk
 
-    #    for key in self.cy_arrivals:
-    #        t_pred = model[3] + self.cy_traveltimes[key].value(model[:3])
-    #        residual = self.cy_arrivals[key] - t_pred
-    #        log_likelihood = log_likelihood + self.cy_residual_rvs[key].logpdf(residual)
-    #    return (log_likelihood)
+        for key in self.cy_arrivals:
+            t_pred = model[3] + self.cy_traveltimes[key].value(model[:3])
+            residual = self.cy_arrivals[key] - t_pred
+            log_likelihood = log_likelihood + self.cy_residual_rvs[key].logpdf(residual)
+        return (log_likelihood)
