@@ -18,8 +18,10 @@ If you make use of this code in published work, please cite White *et al.* (2020
 
 ## Installation
 
-### PIP--recommended
+### PIP—recommended
+```bash
 sh$> pip install pykonal
+```
 
 ### From source code
 Download an unzip the [latest release](https://github.com/malcolmw/pykonal/releases "Releases").
