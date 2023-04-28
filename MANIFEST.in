@@ -1,3 +1,5 @@
 include pykonal/*.pyx
 include pykonal/*.pxd
 include pykonal/*.cpp
+include pykonal/data
+include README.md

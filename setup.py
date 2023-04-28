@@ -45,6 +45,7 @@ here = os.path.abspath(os.path.dirname(__file__))
 # Import the README and use it as the long-description.
 # Note: this will only work if "README.md" is present in your MANIFEST.in file!
 try:
+    raise FileNotFoundError
     with io.open(os.path.join(here, "README.md"), encoding="utf-8") as f:
         long_description = "\n" + f.read()
 except FileNotFoundError:
@@ -62,7 +63,7 @@ setup(
     version=about["__version__"],
     description=description,
     long_description=long_description,
-    long_description_content_type="text/markdown",
+    #long_description_content_type="text/markdown",
     author=author,
     author_email=email,
     python_requires=requires_python,
