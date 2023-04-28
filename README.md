@@ -17,18 +17,13 @@ Documentation is available [here](https://malcolmw.github.io/pykonal-docs/ "PyKo
 If you make use of this code in published work, please cite White *et al.* (2020).
 
 ## Installation
-Download the [latest release](https://github.com/malcolmw/pykonal/releases "Releases").
 
-### Conda—recommended
+### PIP--recommended
+sh$> pip install pykonal
+
+### From source code
+Download an unzip the [latest release](https://github.com/malcolmw/pykonal/releases "Releases").
 ```bash
-sh$> conda create --name pykonal -c conda-forge python=3.8 'cython>=0.29.14' h5py numpy scipy
-sh$> conda activate pykonal
-(pykonal)sh$> cd path/to/pykonal
-(pykonal)sh$> pip install .
-```
-### PIP
-```bash
-sh$> pip install cython>=0.29.14 h5py numpy scipy
 sh$> cd path/to/pykonal
 sh$> pip install .
 ```
