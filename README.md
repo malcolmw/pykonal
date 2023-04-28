@@ -24,7 +24,7 @@ sh$> pip install pykonal
 ```
 
 ### From source code
-Download an unzip the [latest release](https://github.com/malcolmw/pykonal/releases "Releases").
+Download and unzip the [latest release](https://github.com/malcolmw/pykonal/releases "Releases").
 ```bash
 sh$> cd path/to/pykonal
 sh$> pip install .
