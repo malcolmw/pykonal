@@ -1,3 +1,27 @@
 [build-system]
-requires = ["setuptools", "wheel", "cython>=0.29.14", "numpy"]
-build-backend = "setuptools.build_meta"
+requires = ['setuptools', 'wheel', 'Cython>=0.29.14', 'numpy']
+build-backend = 'setuptools.build_meta'
+
+[project]
+name = 'pykonal'
+version = '0.4.0'
+authors = [
+    {name='Malcolm C. A. White', email='malcolmw@mit.edu'}
+]
+description = 'Solve the Eikonal equation in 3D Cartesian or spherical coordinates.'
+readme = 'README.md'
+requires-python = '>= 3.6'
+classifiers = [
+    'Development Status :: 4 - Beta',
+    'Intended Audience :: Science/Research',
+    'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
+    'Operating System :: MacOS :: MacOS X',
+    'Operating System :: POSIX :: Linux',
+    'Programming Language :: Python',
+    'Programming Language :: Python :: 3',
+    'Topic :: Scientific/Engineering :: Physics'
+]
+
+[project.urls]
+'Homepage' = 'https://github.com/malcolmw/pykonal'
+'Bug Tracker' = 'https://github.com/malcolmw/pykonal/issues'
