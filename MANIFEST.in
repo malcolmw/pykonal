@@ -1,0 +1,3 @@
+include pykonal/*.pyx
+include pykonal/*.pxd
+include pykonal/*.cpp
