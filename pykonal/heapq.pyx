@@ -33,7 +33,7 @@ cdef class Heap(object):
     """
     def __init__(self, values):
         self.cy_values     = values
-        self.cy_heap_index = np.full(values.shape, fill_value=-1)
+        self.cy_heap_index = np.full(values.shape, fill_value=-1, dtype=np.intp)
 
 
     @property
