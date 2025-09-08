@@ -432,7 +432,7 @@ cdef class ScalarField3D(Field3D):
 
         for idx in range(3):
             ray.push_back(end[idx])
-        value = np.infty
+        value = np.inf
 
         while True:
             point = <constants.REAL_t[:3]>&ray[ray.size()-3]
